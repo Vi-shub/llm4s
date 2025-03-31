@@ -35,7 +35,9 @@ object LLMConnect {
       val config    = AnthropicConfig.fromEnv(modelName)
       new AnthropicClient(config)
     } else {
-      throw new IllegalArgumentException(s"Model $model is not supported. Supported formats are: 'openai/model-name', 'azure/model-name', or 'anthropic/model-name'.")
+      throw new IllegalArgumentException(
+        s"Model $model is not supported. Supported formats are: 'openai/model-name', 'azure/model-name', or 'anthropic/model-name'."
+      )
     }
   }
 

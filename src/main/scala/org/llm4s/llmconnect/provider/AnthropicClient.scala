@@ -135,7 +135,7 @@ curl https://api.anthropic.com/v1/messages \
   private def convertToolToAnthropicTool(toolFunction: ToolFunction[_, _]): Tool = {
     // note: in case of debug set this environment variable -- `ANTHROPIC_LOG=debug`
 
-    val objectSchema       = toolFunction.schema.asInstanceOf[ObjectSchema[_]]
+    val objectSchema = toolFunction.schema.asInstanceOf[ObjectSchema[_]]
     val jsonSchema: JsonObject =
       ObjectMappers.jsonMapper().readValue(objectSchema.toJsonSchema.render(), classOf[JsonObject])
     val jsonSchemaMap   = jsonSchema.values()

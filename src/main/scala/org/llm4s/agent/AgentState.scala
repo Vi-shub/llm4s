@@ -37,36 +37,36 @@ case class AgentState(
    */
   def withStatus(newStatus: AgentStatus): AgentState =
     copy(status = newStatus)
-    
+
   /**
    * Prints a detailed dump of the agent execution state for debugging
    */
   def dump(): Unit = {
     val separator = "=" * 80
-    
+
     println(separator)
     println(s"AGENT STATE DUMP - Status: $status")
     println(separator)
-    
+
     println(s"User Query: $userQuery")
     println(s"Available Tools: ${tools.tools.map(_.name).mkString(", ")}")
     println(separator)
-    
+
     println("CONVERSATION FLOW:")
     println(separator)
-    
+
     conversation.messages.zipWithIndex.foreach { case (message, index) =>
       val step = index + 1
       val roleMarker = message.role match {
-        case "user" => "👤 USER"
+        case "user"      => "👤 USER"
         case "assistant" => "🤖 ASSISTANT"
-        case "system" => "⚙️ SYSTEM"
-        case "tool" => "🛠️ TOOL"
-        case _ => s"[${message.role.toUpperCase}]"
+        case "system"    => "⚙️ SYSTEM"
+        case "tool"      => "🛠️ TOOL"
+        case _           => s"[${message.role.toUpperCase}]"
       }
-      
+
       println(s"STEP $step: $roleMarker")
-      
+
       message match {
         case msg: AssistantMessage if msg.toolCalls.nonEmpty =>
           println(s"Content: ${msg.content}")
@@ -76,18 +76,18 @@ case class AgentState(
             println(s"    Tool: ${tc.name}")
             println(s"    Args: ${tc.arguments}")
           }
-          
+
         case msg: ToolMessage =>
           println(s"Tool Call ID: ${msg.toolCallId}")
           println(s"Result: ${msg.content}")
-          
+
         case msg =>
           println(s"Content: ${msg.content}")
       }
-      
+
       println(separator)
     }
-    
+
     if (logs.nonEmpty) {
       println("EXECUTION LOGS:")
       logs.zipWithIndex.foreach { case (log, index) =>
@@ -95,7 +95,7 @@ case class AgentState(
       }
       println(separator)
     }
-    
+
     println(s"END OF AGENT STATE DUMP - Status: $status")
     println(separator)
   }
@@ -108,7 +108,7 @@ sealed trait AgentStatus
 
 object AgentStatus {
   case object InProgress           extends AgentStatus
-  case object WaitingForTools      extends AgentStatus  // Waiting for tool execution
+  case object WaitingForTools      extends AgentStatus // Waiting for tool execution
   case object Complete             extends AgentStatus
   case class Failed(error: String) extends AgentStatus
 }
