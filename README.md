@@ -40,6 +40,10 @@ LLM4S provides a simple, robust, and scalable framework for building LLM applica
 
 ## Getting Started
 
+To get started with the LLM4S project, check out this teaser talk presented by **Kannupriya Kalra** at the Bay Area Scala Conference. This recording is essential for understanding where we’re headed:
+
+🎥 **Teaser Talk:** https://www.youtube.com/watch?v=SXybj2P3_DE&ab_channel=SalarRahmanian
+
 ### Prerequisites
 
 - JDK 21+
@@ -103,7 +107,34 @@ Tools run in a protected Docker container environment to prevent accidental syst
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Interested in contributing? Start here:
+
+ **LLM4S GitHub Issues:** https://lnkd.in/eXrhwgWY
+
+## Join the Community
+
+Want to be part of developing this and interact with other developers? Join our Discord community!
+
+ **LLM4S Discord:** https://lnkd.in/eb4ZFdtG
+
+
+## Google Summer of Code 2025
+
+This project is also participating in **Google Summer of Code (GSoC) 2025**! If you're interested in contributing to the project as a contributor, check out the details here:
+
+👉 **Scala Center GSoC Ideas:** [https://lnkd.in/enXAepQ3](https://lnkd.in/enXAepQ3)
+
+To know everything about GSoC and how it works, check out this talk:
+
+🎥 **GSoC Process Explained:** [https://lnkd.in/e_dM57bZ](https://lnkd.in/e_dM57bZ)
+
+
+## Maintainers
+
+Want to connect with maintainers, the LLM4S project is maintained by:
+
+- **Rory Graves** - https://www.linkedin.com/in/roryjgraves/
+- **Kannupriya Kalra** - https://www.linkedin.com/in/kannupriyakalra/
 
 ## License
 
