@@ -300,9 +300,6 @@ To know everything about GSoC and how it works, check out this talk:
 
 To learn about the experience of GSoC contributors, check out their blogs:
 
-📝 **Contributor Blogs:**
-
-- **Elvan Konukseven** - [elvankonukseven.com/blog](https://www.elvankonukseven.com/blog)
 
 ## GSoC 2025: Funded Project Ideas from LLM4S
 
@@ -314,6 +311,7 @@ To learn about the experience of GSoC contributors, check out their blogs:
 - **Mentor:** [Kannupriya Kalra](https://www.linkedin.com/in/kannupriyakalra/) (Email: [kannupriyakalra@gmail.com](mailto:kannupriyakalra@gmail.com))
 - **Co-mentor:** [Rory Graves](https://www.linkedin.com/in/roryjgraves/) (Email: [rory.graves@fieldmark.co.uk](mailto:rory.graves@fieldmark.co.uk))
 - **Announcement:** [Official Acceptance Post](https://www.linkedin.com/posts/elvan-konukseven_got-accepted-into-the-google-summer-of-code-activity-7326980179812139008-OoMU?utm_source=share&utm_medium=member_desktop&rcm=ACoAADmu6soBQhs2fe8_CNIw2ChlNe0Oon4E3G0)
+- **Contributor Blogs:** [elvankonukseven.com/blog](https://www.elvankonukseven.com/blog)
 
 ### LLM4S - RAG in a box
 
