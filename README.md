@@ -157,23 +157,24 @@ sbt fullCrossTest
 
 Our goal is to implement Scala equivalents of popular Python LLM frameworks:
 
-- [ ]
-- [ ] A comprehensive toolchain for building LLM apps (like LangChain/LangGraph)
-  - [ ]
-  - [ ]
-  - [ ]
-- [ ]
+- [ ] * Single API access to multiple LLM providers (like LiteLLM) - llmconnect
+- [ ] A comprehensive toolchain for building LLM apps (like LangChain/LangGraph) 
+  - [ ] * RAG search
+  - [ ] * tool calling
+  - [ ] * logging/tracking/monitoring
+- [ ] * An agentic framework (like PydanticAI, CrewAI)
   - [ ] Single agent
   - [ ] Multi-agent
 - [ ] Tokenization utilities (port of tiktoken)
 - [ ] Examples/ support
-  - [ ]
-  - [ ]
+   - [ ] * Standard tool calling libraries
+   - [ ] * examples of all use-cases
 - [ ] stable platform -tests etc
 - [ ] Scala Coding SWE Agent - an agent that can do SWE bench type tasks on Scala codebases.
-  - [ ] codemaps
-  - [ ] generation
-  - [ ] templates for library use?
+   - [ ]  codemaps 
+   - [ ]  generation 
+   - [ ]  templates for library use?
+
 
 ## Tool Calling
 
