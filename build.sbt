@@ -199,9 +199,54 @@ lazy val samples = (project in file("samples"))
     publish / skip := true
   )
 
+// Szork module - separate from main build to avoid cross-version conflicts
+lazy val szork = (project in file("szork"))
+  .settings(
+    name := "szork",
+    scalaVersion := scala213,
+    // Only Scala 2.13 - no cross-building
+    crossScalaVersions := Nil,
+    Compile / scalacOptions := scalacOptionsForVersion(scala213),
+    // All dependencies needed for szork
+    libraryDependencies ++= Seq(
+      // Cask for web server
+      "com.lihaoyi" %% "cask" % "0.10.2",
+      // Dependencies from commonSettings
+      "org.typelevel" %% "cats-core"       % "2.13.0",
+      "com.lihaoyi"   %% "upickle"         % "4.2.1",
+      "ch.qos.logback" % "logback-classic" % "1.5.18",
+      "org.scalatest" %% "scalatest"       % "3.2.19" % Test,
+      // Dependencies from root
+      "com.azure"          % "azure-ai-openai" % "1.0.0-beta.16",
+      "com.anthropic"      % "anthropic-java"  % "2.2.0",
+      "com.knuddels"       % "jtokkit"         % "1.1.0",
+      "com.lihaoyi"       %% "requests"        % "0.9.0",
+      "org.java-websocket" % "Java-WebSocket"  % "1.6.0",
+      "com.softwaremill.sttp.client4" %% "core"  % "4.0.9",
+      "com.lihaoyi"                   %% "ujson" % "4.2.1",
+      "org.apache.pdfbox" % "pdfbox" % "3.0.5",
+      "org.apache.tika" % "tika-core" % "3.2.1",
+      "org.apache.poi" % "poi-ooxml" % "5.4.1",
+      "org.jsoup" % "jsoup" % "1.21.1"
+    ),
+    // Include source directories from main project and shared
+    Compile / unmanagedSourceDirectories ++= {
+      val baseDir = (ThisBuild / baseDirectory).value
+      Seq(
+        baseDir / "src" / "main" / "scala",
+        baseDir / "src" / "main" / "scala-2.13",
+        baseDir / "shared" / "src" / "main" / "scala"
+      )
+    }
+  )
+  .settings(
+    publish / skip := true
+  )
+
+
 lazy val crossLibDependencies = Def.setting {
   Seq(
-    "org.llm4s"     %% "llm4s"     % version.value,
+//    "org.llm4s"     %% "llm4s"     % version.value,
     "org.scalatest" %% "scalatest" % "3.2.19" % Test,
     "com.softwaremill.sttp.client4" %% "core"  % "4.0.9",
     "com.lihaoyi"                   %% "ujson" % "4.2.1",
