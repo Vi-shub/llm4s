@@ -1,6 +1,6 @@
 package org.llm4s.szork
 
-import org.llm4s.agent.Agent
+import org.llm4s.agent.{ Agent, AgentStatus }
 
 import org.llm4s.llmconnect.LLM
 import org.llm4s.llmconnect.model.UserMessage
@@ -41,7 +41,8 @@ object SzorkMain {
       systemPromptAddition = Some(prompt),
     )
 
-    println("You are at the entrance to a dark cave.\n>")
+    println("You are at the entrance to a dark cave.")
+    print("> ")
 
     var continue = true
     while (continue) {
@@ -50,10 +51,11 @@ object SzorkMain {
         println("Goodbye, adventurer.")
         continue = false
       } else {
-        print("User input received: " + userInput)
-        print("...")
-        currentState = currentState.addMessage(UserMessage(
-          content = userInput))
+        println(s"User input received: $userInput")
+        print("Processing...")
+        currentState = currentState
+          .addMessage(UserMessage(content = userInput))
+          .withStatus(AgentStatus.InProgress)
 
         println("Running agent - step count: " + currentState.conversation.messages.length)
         val response = agent.run(currentState)
@@ -61,7 +63,7 @@ object SzorkMain {
           case Right(newState) =>
             currentState = newState
             println("Agent response received- step count: " + currentState.conversation.messages.length)
-            println(s"\n${currentState.conversation.messages.last.content}\n>")
+            println(s"\n${currentState.conversation.messages.last.content}")
 
           case Left(error) =>
             println(s"Error: $error")
