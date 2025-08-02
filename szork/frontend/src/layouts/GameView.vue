@@ -30,6 +30,13 @@
                 class="game-message"
                 :class="message.type"
               >
+                <div v-if="message.image" class="scene-image-container">
+                  <img 
+                    :src="`data:image/png;base64,${message.image}`" 
+                    alt="Scene visualization"
+                    class="scene-image"
+                  />
+                </div>
                 {{ message.text }}
               </div>
               <div v-if="loading" class="loading-indicator">
@@ -94,6 +101,7 @@ import axios from "axios";
 interface GameMessage {
   text: string;
   type: "user" | "game" | "system";
+  image?: string | null;
 }
 
 export default defineComponent({
@@ -173,6 +181,7 @@ export default defineComponent({
           messages.value.push({
             text: response.data.response,
             type: "game",
+            image: response.data.image || null
           });
           
           // Play audio narration if available
@@ -181,6 +190,11 @@ export default defineComponent({
             playAudioNarration(response.data.audio);
           } else {
             console.log("No audio narration in response");
+          }
+          
+          // Log if image is available
+          if (response.data.image) {
+            console.log("Scene image available");
           }
         } else {
           messages.value.push({
@@ -239,7 +253,7 @@ export default defineComponent({
 
         mediaRecorder.value.onstop = async () => {
           // Try to use a more compatible audio format
-          const mimeType = mediaRecorder.value.mimeType || "audio/webm";
+          const mimeType = mediaRecorder.value?.mimeType || "audio/webm";
           const audioBlob = new Blob(audioChunks.value, { type: mimeType });
           console.log("Recording stopped, mime type:", mimeType, "size:", audioBlob.size);
           await sendAudioCommand(audioBlob);
@@ -312,6 +326,7 @@ export default defineComponent({
           messages.value.push({
             text: response.data.response,
             type: "game",
+            image: response.data.image || null
           });
           
           // Play audio narration if available
@@ -320,6 +335,11 @@ export default defineComponent({
             playAudioNarration(response.data.audio);
           } else {
             console.log("No audio narration in voice command response");
+          }
+          
+          // Log if image is available
+          if (response.data.image) {
+            console.log("Scene image available from voice command");
           }
         } else {
           messages.value.push({
@@ -566,5 +586,20 @@ export default defineComponent({
 
 .audio-controls {
   font-size: 0.875rem;
+}
+
+.scene-image-container {
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.scene-image {
+  width: 100%;
+  max-width: 600px;
+  height: auto;
+  display: block;
+  border-radius: 8px;
 }
 </style>

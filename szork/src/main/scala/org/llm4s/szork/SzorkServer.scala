@@ -80,6 +80,11 @@ object SzorkServer extends MainRoutes {
               result("audio") = audio
             }
             
+            // Add image if generated
+            gameResponse.imageBase64.foreach { image =>
+              result("image") = image
+            }
+            
             result
             
           case Left(error) =>
@@ -141,6 +146,11 @@ object SzorkServer extends MainRoutes {
                   // Add audio if generated
                   gameResponse.audioBase64.foreach { audio =>
                     result("audio") = audio
+                  }
+                  
+                  // Add image if generated
+                  gameResponse.imageBase64.foreach { image =>
+                    result("image") = image
                   }
                   
                   result

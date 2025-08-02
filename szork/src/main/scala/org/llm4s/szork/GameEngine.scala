@@ -45,9 +45,9 @@ class GameEngine {
     "You are at the entrance to a dark cave."
   }
   
-  case class GameResponse(text: String, audioBase64: Option[String] = None)
+  case class GameResponse(text: String, audioBase64: Option[String] = None, imageBase64: Option[String] = None)
   
-  def processCommand(command: String, generateAudio: Boolean = true): Either[LLMError, GameResponse] = {
+  def processCommand(command: String, generateAudio: Boolean = true, generateImage: Boolean = true): Either[LLMError, GameResponse] = {
     logger.debug(s"Processing command: $command")
     
     // Track message count before adding user message
@@ -88,7 +88,24 @@ class GameEngine {
           None
         }
         
-        Right(GameResponse(responseText, audioBase64))
+        // Generate image if requested and it's a new scene
+        val imageBase64 = if (generateImage && isNewScene(responseText)) {
+          logger.info(s"Generating image for new scene")
+          val imageGen = ImageGeneration()
+          val scenePrompt = extractSceneDescription(responseText)
+          imageGen.generateScene(scenePrompt, ImageGeneration.STYLE_FANTASY) match {
+            case Right(image) =>
+              logger.info(s"Generated scene image, base64 length: ${image.length}")
+              Some(image)
+            case Left(error) =>
+              logger.error(s"Failed to generate image: $error")
+              None
+          }
+        } else {
+          None
+        }
+        
+        Right(GameResponse(responseText, audioBase64, imageBase64))
         
       case Left(error) =>
         logger.error(s"Error processing command: $error")
@@ -99,6 +116,40 @@ class GameEngine {
   def getMessageCount: Int = currentState.conversation.messages.length
   
   def getState: AgentState = currentState
+  
+  private def isNewScene(response: String): Boolean = {
+    // Detect if this is a new scene based on keywords
+    val sceneIndicators = List(
+      "you enter", "you arrive", "you find yourself",
+      "you see", "before you", "you are in",
+      "you stand", "exits:", "you reach"
+    )
+    val lowerResponse = response.toLowerCase
+    sceneIndicators.exists(lowerResponse.contains)
+  }
+  
+  private def extractSceneDescription(response: String): String = {
+    // Extract the main scene description, focusing on visual elements
+    val sentences = response.split("[.!?]").filter(_.trim.nonEmpty)
+    val visualSentences = sentences.filter { s =>
+      val lower = s.toLowerCase
+      lower.contains("see") || lower.contains("before") || 
+      lower.contains("stand") || lower.contains("enter") ||
+      lower.contains("room") || lower.contains("cave") ||
+      lower.contains("forest") || lower.contains("dungeon") ||
+      lower.contains("hall") || lower.contains("chamber")
+    }
+    
+    val description = if (visualSentences.nonEmpty) {
+      visualSentences.mkString(". ")
+    } else {
+      sentences.headOption.getOrElse(response.take(100))
+    }
+    
+    // Clean up and enhance for image generation
+    description.replaceAll("You ", "A fantasy adventurer ")
+      .replaceAll("you ", "the adventurer ")
+  }
 }
 
 object GameEngine {
