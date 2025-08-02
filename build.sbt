@@ -227,7 +227,8 @@ lazy val szork = (project in file("szork"))
       "org.apache.pdfbox" % "pdfbox" % "3.0.5",
       "org.apache.tika" % "tika-core" % "3.2.1",
       "org.apache.poi" % "poi-ooxml" % "5.4.1",
-      "org.jsoup" % "jsoup" % "1.21.1"
+      "org.jsoup" % "jsoup" % "1.21.1",
+      "io.github.cdimascio" % "dotenv-java" % "3.0.0"
     ),
     // Include source directories from main project and shared
     Compile / unmanagedSourceDirectories ++= {
