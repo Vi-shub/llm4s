@@ -203,6 +203,7 @@ lazy val samples = (project in file("samples"))
 lazy val szork = (project in file("szork"))
   .settings(
     name := "szork",
+    fork := true,
     scalaVersion := scala213,
     // Only Scala 2.13 - no cross-building
     crossScalaVersions := Nil,
@@ -215,6 +216,7 @@ lazy val szork = (project in file("szork"))
       "org.typelevel" %% "cats-core"       % "2.13.0",
       "com.lihaoyi"   %% "upickle"         % "4.2.1",
       "ch.qos.logback" % "logback-classic" % "1.5.18",
+      "org.slf4j"      % "log4j-over-slf4j" % "2.0.16",
       "org.scalatest" %% "scalatest"       % "3.2.19" % Test,
       // Dependencies from root
       "com.azure"          % "azure-ai-openai" % "1.0.0-beta.16",

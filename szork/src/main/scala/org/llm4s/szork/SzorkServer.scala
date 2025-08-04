@@ -231,7 +231,8 @@ object SzorkServer extends MainRoutes {
   println("  POST /api/game/start - Start a new game session")
   println("  POST /api/game/command - Send a command to the game")
   println("  GET  /api/game/session/:id - Get session info")
-  
+
+  override def verbose: Boolean = true
   // Initialize the server - the parent's main() will handle starting it
   initialize()
 }

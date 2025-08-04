@@ -42,12 +42,12 @@ class GameEngine {
       toolRegistry,
       systemPromptAddition = Some(gamePrompt)
     )
-    "You are at the entrance to a dark cave."
+    "Welcome th the adventure - type look"
   }
   
   case class GameResponse(text: String, audioBase64: Option[String] = None, imageBase64: Option[String] = None)
   
-  def processCommand(command: String, generateAudio: Boolean = true, generateImage: Boolean = true): Either[LLMError, GameResponse] = {
+  def processCommand(command: String, generateAudio: Boolean = true, generateImage: Boolean = false): Either[LLMError, GameResponse] = {
     logger.debug(s"Processing command: $command")
     
     // Track message count before adding user message
