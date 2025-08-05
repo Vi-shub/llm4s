@@ -13,7 +13,7 @@ case class GameSession(
 case class CommandRequest(command: String)
 case class CommandResponse(response: String, sessionId: String)
 
-object SzorkServer extends MainRoutes {
+object SzorkServer extends cask.Main with cask.Routes {
   
   private val logger = LoggerFactory.getLogger(getClass)
   private val sessions = mutable.Map[String, GameSession]()
@@ -233,6 +233,11 @@ object SzorkServer extends MainRoutes {
   println("  GET  /api/game/session/:id - Get session info")
 
   override def verbose: Boolean = true
-  // Initialize the server - the parent's main() will handle starting it
+  override def port: Int = 8080
+  override def host: String = "0.0.0.0"
+  
+  def allRoutes = Seq(this)
+  
+  // Initialize routes
   initialize()
 }

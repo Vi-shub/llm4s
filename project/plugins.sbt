@@ -9,4 +9,6 @@ addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % "1.1.4")
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.5.2")
 // Dependency updates
 addSbtPlugin("org.jmotor.sbt" % "sbt-dependency-updates" % "1.2.9")
+// Hot reloading for development
+addSbtPlugin("io.spray" % "sbt-revolver" % "0.10.0")
 

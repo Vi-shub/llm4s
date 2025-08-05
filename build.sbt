@@ -201,6 +201,7 @@ lazy val samples = (project in file("samples"))
 
 // Szork module - separate from main build to avoid cross-version conflicts
 lazy val szork = (project in file("szork"))
+  .enablePlugins(RevolverPlugin)
   .settings(
     name := "szork",
     fork := true,
@@ -208,6 +209,21 @@ lazy val szork = (project in file("szork"))
     // Only Scala 2.13 - no cross-building
     crossScalaVersions := Nil,
     Compile / scalacOptions := scalacOptionsForVersion(scala213),
+    // Revolver settings for hot reloading
+    reStart / mainClass := Some("org.llm4s.szork.SzorkServer"),
+    reStart / javaOptions ++= Seq(
+      "-Xmx1g",
+      "-XX:MaxMetaspaceSize=512m"
+    ),
+    // Watch for changes in these directories
+    watchSources ++= Seq(
+      (ThisBuild / baseDirectory).value / "szork" / "src",
+      (ThisBuild / baseDirectory).value / "src" / "main" / "scala",
+      (ThisBuild / baseDirectory).value / "shared" / "src" / "main" / "scala"
+    ).flatMap(dir => (dir ** "*.scala").get),
+    // Revolver options
+    reStartArgs := Seq(),
+    Global / cancelable := true,
     // All dependencies needed for szork
     libraryDependencies ++= Seq(
       // Cask for web server
@@ -286,6 +302,14 @@ addCommandAlias("testAll", ";+test")
 addCommandAlias("compileAll", ";+compile")
 addCommandAlias("testCross", ";crossTestScala2/test;crossTestScala3/test")
 addCommandAlias("fullCrossTest", ";clean ;crossTestScala2/clean ;crossTestScala3/clean ;+publishLocal ;testCross")
+
+// Szork server commands with sbt-revolver
+addCommandAlias("szorkStart", "szork/reStart")
+addCommandAlias("szorkStop", "szork/reStop")
+addCommandAlias("szorkRestart", "szork/reRestart")
+addCommandAlias("szorkStatus", "szork/reStatus")
+// Note: For triggered restart mode, use: sbt "~szorkStart"
+// The quotes are required to prevent shell interpretation of ~
 
 mimaPreviousArtifacts := Set(
   organization.value %% "llm4s" % "0.1.4"
