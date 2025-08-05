@@ -38,11 +38,25 @@ class GameEngine {
   def initialize(): String = {
     logger.info("Initializing new game engine")
     currentState = agent.initialize(
-      "Let's begin the adventure!",
+      "Let's begin the adventure! Start by describing the initial scene where the player begins their journey.",
       toolRegistry,
       systemPromptAddition = Some(gamePrompt)
     )
-    "Welcome th the adventure - type look"
+    
+    // Automatically run the initial scene generation
+    agent.run(currentState) match {
+      case Right(newState) =>
+        currentState = newState
+        // Extract the initial scene description from the agent's response
+        val assistantMessages = newState.conversation.messages.collect { case msg: AssistantMessage => msg }
+        val initialScene = assistantMessages.headOption.map(_.content).getOrElse("You find yourself at the entrance of a mysterious dungeon.")
+        logger.info(s"Game initialized with scene: ${initialScene.take(50)}...")
+        initialScene
+        
+      case Left(error) =>
+        logger.error(s"Failed to initialize game: $error")
+        "Welcome to the adventure! You stand at the entrance of a dark dungeon. Stone steps lead down into darkness. Exits: north (into dungeon)."
+    }
   }
   
   case class GameResponse(text: String, audioBase64: Option[String] = None, imageBase64: Option[String] = None)
