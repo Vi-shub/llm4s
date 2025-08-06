@@ -10,9 +10,11 @@ import java.net.URI
 
 class MusicGeneration {
   private val logger = LoggerFactory.getLogger(getClass)
-  private val replicateApiKey = EnvLoader.get("REPLICATE_API_KEY").getOrElse(
-    throw new IllegalStateException("REPLICATE_API_KEY not found in environment")
+  private val replicateApiKey = EnvLoader.get("REPLICATE_API_KEY").filter(key => 
+    key.nonEmpty && !key.contains("YOUR_REPLICATE_API_KEY")
   )
+  
+  def isAvailable: Boolean = replicateApiKey.isDefined
   
   case class MusicMood(
     name: String,
@@ -32,6 +34,11 @@ class MusicGeneration {
   }
   
   def generateMusic(mood: MusicMood): Either[String, String] = {
+    if (!isAvailable) {
+      logger.warn("Music generation disabled - REPLICATE_API_KEY not configured")
+      return Left("Music generation not available")
+    }
+    
     logger.info(s"Generating music for mood: ${mood.name}")
     
     try {
@@ -39,7 +46,7 @@ class MusicGeneration {
       val createResponse = post(
         "https://api.replicate.com/v1/predictions",
         headers = Map(
-          "Authorization" -> s"Bearer $replicateApiKey",
+          "Authorization" -> s"Bearer ${replicateApiKey.get}",
           "Content-Type" -> "application/json"
         ),
         data = Obj(
@@ -81,12 +88,16 @@ class MusicGeneration {
   }
   
   private def pollPrediction(predictionId: String, maxAttempts: Int = 30): Either[String, String] = {
+    if (!isAvailable) {
+      return Left("Music generation not available")
+    }
+    
     var attempts = 0
     
     while (attempts < maxAttempts) {
       val response = get(
         s"https://api.replicate.com/v1/predictions/$predictionId",
-        headers = Map("Authorization" -> s"Bearer $replicateApiKey")
+        headers = Map("Authorization" -> s"Bearer ${replicateApiKey.get}")
       )
       
       if (response.statusCode == 200) {

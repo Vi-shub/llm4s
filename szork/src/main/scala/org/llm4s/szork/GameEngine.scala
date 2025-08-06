@@ -59,7 +59,13 @@ class GameEngine(sessionId: String = "") {
     }
   }
   
-  case class GameResponse(text: String, audioBase64: Option[String] = None, imageBase64: Option[String] = None)
+  case class GameResponse(
+    text: String, 
+    audioBase64: Option[String] = None, 
+    imageBase64: Option[String] = None,
+    backgroundMusicBase64: Option[String] = None,
+    musicMood: Option[String] = None
+  )
   
   def processCommand(command: String, generateAudio: Boolean = true): Either[LLMError, GameResponse] = {
     logger.debug(s"[$sessionId] Processing command: $command")
@@ -105,8 +111,9 @@ class GameEngine(sessionId: String = "") {
         }
         
         // Image generation is now handled asynchronously in the server
+        // Background music generation is also handled asynchronously
         
-        Right(GameResponse(responseText, audioBase64, None))
+        Right(GameResponse(responseText, audioBase64, None, None, None))
         
       case Left(error) =>
         logger.error(s"[$sessionId] Error processing command: $error")
@@ -168,6 +175,50 @@ class GameEngine(sessionId: String = "") {
     // Clean up and enhance for image generation
     description.replaceAll("You ", "A fantasy adventurer ")
       .replaceAll("you ", "the adventurer ")
+  }
+  
+  def shouldGenerateBackgroundMusic(responseText: String): Boolean = {
+    // Generate music for significant scene changes or mood shifts
+    val lowerText = responseText.toLowerCase
+    isNewScene(responseText) || 
+    lowerText.contains("battle") || 
+    lowerText.contains("victory") ||
+    lowerText.contains("defeated") ||
+    lowerText.contains("enter") ||
+    lowerText.contains("arrive")
+  }
+  
+  def generateBackgroundMusic(responseText: String): Option[(String, String)] = {
+    if (shouldGenerateBackgroundMusic(responseText)) {
+      logger.info(s"[$sessionId] Checking if background music should be generated")
+      try {
+        val musicGen = MusicGeneration()
+        
+        // Check if music generation is available
+        if (!musicGen.isAvailable) {
+          logger.info(s"[$sessionId] Music generation disabled - no API key configured")
+          return None
+        }
+        
+        val mood = musicGen.detectMoodFromText(responseText)
+        logger.info(s"[$sessionId] Detected mood: ${mood.name}, generating background music")
+        
+        musicGen.generateMusic(mood) match {
+          case Right(musicBase64) =>
+            logger.info(s"[$sessionId] Background music generated for mood: ${mood.name}, base64: ${musicBase64.length}")
+            Some((musicBase64, mood.name))
+          case Left(error) =>
+            logger.warn(s"[$sessionId] Music generation not available: $error")
+            None
+        }
+      } catch {
+        case e: Exception =>
+          logger.warn(s"[$sessionId] Music generation disabled due to error: ${e.getMessage}")
+          None
+      }
+    } else {
+      None
+    }
   }
 }
 

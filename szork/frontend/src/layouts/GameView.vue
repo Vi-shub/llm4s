@@ -28,6 +28,17 @@
               <v-col cols="auto">
                 <div class="audio-controls">
                   <v-btn
+                    @click="backgroundMusicEnabled = !backgroundMusicEnabled"
+                    :color="backgroundMusicEnabled ? 'primary' : 'grey'"
+                    :variant="backgroundMusicEnabled ? 'flat' : 'outlined'"
+                    icon
+                    size="small"
+                    :title="backgroundMusicEnabled ? 'Background Music Enabled' : 'Background Music Disabled'"
+                    class="mr-2"
+                  >
+                    <v-icon>{{ backgroundMusicEnabled ? 'mdi-music' : 'mdi-music-off' }}</v-icon>
+                  </v-btn>
+                  <v-btn
                     @click="narrationEnabled = !narrationEnabled"
                     :color="narrationEnabled ? 'success' : 'grey'"
                     :variant="narrationEnabled ? 'flat' : 'outlined'"
@@ -124,7 +135,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, nextTick, onMounted } from "vue";
+import { defineComponent, ref, nextTick, onMounted, watch } from "vue";
 import axios from "axios";
 
 interface GameMessage {
@@ -150,6 +161,12 @@ export default defineComponent({
     const narrationEnabled = ref(true);
     const narrationVolume = ref(0.8);
     const gameStarted = ref(false);
+    const backgroundMusicEnabled = ref(true);
+    const backgroundMusicVolume = ref(0.3);
+    const currentBackgroundMusic = ref<HTMLAudioElement | null>(null);
+    const nextBackgroundMusic = ref<HTMLAudioElement | null>(null);
+    const currentMusicMood = ref<string | null>(null);
+    const currentNarration = ref<HTMLAudioElement | null>(null);
     
     // Helper function for logging with timestamps
     const log = (message: string, ...args: any[]) => {
@@ -193,6 +210,12 @@ export default defineComponent({
         if (response.data.hasImage) {
           log("Initial scene image generation started, polling for result...");
           pollForImage(sessionId.value!, response.data.messageIndex, messageIdx);
+        }
+        
+        // If background music is being generated for initial scene, poll for it
+        if (response.data.hasMusic) {
+          log("Initial scene music generation started, polling for result...");
+          pollForMusic(sessionId.value!, response.data.messageIndex);
         }
         
         // Note: Initial message doesn't have audio as it's hardcoded
@@ -259,6 +282,12 @@ export default defineComponent({
           if (response.data.hasImage) {
             log(`[${sessionId.value || 'no-session'}] Image generation started, polling for result...`);
             pollForImage(sessionId.value!, response.data.messageIndex, messageIdx);
+          }
+          
+          // If background music is being generated, poll for it
+          if (response.data.hasMusic) {
+            log(`[${sessionId.value || 'no-session'}] Background music generation started, polling for result...`);
+            pollForMusic(sessionId.value!, response.data.messageIndex);
           }
         } else {
           messages.value.push({
@@ -411,6 +440,12 @@ export default defineComponent({
             log(`[${sessionId.value || 'no-session'}] Image generation started from voice command, polling for result...`);
             pollForImage(sessionId.value!, response.data.messageIndex, messageIdx);
           }
+          
+          // If background music is being generated, poll for it
+          if (response.data.hasMusic) {
+            log(`[${sessionId.value || 'no-session'}] Background music generation started from voice command, polling for result...`);
+            pollForMusic(sessionId.value!, response.data.messageIndex);
+          }
         } else {
           messages.value.push({
             text: `Error: ${response.data.error}`,
@@ -477,12 +512,19 @@ export default defineComponent({
       }
       
       try {
+        // Stop any current narration
+        if (currentNarration.value && !currentNarration.value.paused) {
+          currentNarration.value.pause();
+          currentNarration.value = null;
+        }
+        
         // Create audio element
         const audioUrl = `data:audio/mp3;base64,${audioBase64}`;
         log(`[${sessionId.value || 'no-session'}] Creating audio element with URL length:`, audioUrl.length);
         
         const audio = new Audio(audioUrl);
         audio.volume = narrationVolume.value;
+        currentNarration.value = audio;
         
         // Add event listeners for debugging
         audio.addEventListener('loadeddata', () => {
@@ -500,6 +542,9 @@ export default defineComponent({
         
         audio.addEventListener('ended', () => {
           log(`[${sessionId.value || 'no-session'}] Audio playback ended`);
+          if (currentNarration.value === audio) {
+            currentNarration.value = null;
+          }
         });
         
         // Play the audio
@@ -520,6 +565,156 @@ export default defineComponent({
       }
     };
 
+    const pollForMusic = async (sessionId: string, messageIndex: number) => {
+      const maxAttempts = 60; // 60 seconds max for music generation
+      let attempts = 0;
+      
+      const checkMusic = async () => {
+        try {
+          const response = await axios.get(`/api/game/music/${sessionId}/${messageIndex}`);
+          
+          if (response.data.status === "ready") {
+            log(`[${sessionId}] Background music ready for message ${messageIndex}, mood: ${response.data.mood}`);
+            playBackgroundMusic(response.data.music, response.data.mood);
+          } else if (response.data.status === "failed") {
+            log(`[${sessionId}] Background music generation failed`);
+          } else if (response.data.status === "pending" && attempts < maxAttempts) {
+            attempts++;
+            setTimeout(checkMusic, 1000); // Check again in 1 second
+          } else {
+            log(`[${sessionId}] Background music generation timed out`);
+          }
+        } catch (error) {
+          log("Error polling for music:", error);
+        }
+      };
+      
+      // Start polling after a short delay
+      setTimeout(checkMusic, 1000);
+    };
+
+    const playBackgroundMusic = (musicBase64: string, mood: string) => {
+      log(`Playing background music, mood: ${mood}, enabled: ${backgroundMusicEnabled.value}`);
+      
+      if (!backgroundMusicEnabled.value) {
+        log("Background music is disabled, skipping playback");
+        return;
+      }
+      
+      try {
+        // Create new audio element for the new music
+        const audioUrl = `data:audio/mp3;base64,${musicBase64}`;
+        const newMusic = new Audio(audioUrl);
+        newMusic.volume = 0; // Start at 0 for fade-in
+        newMusic.loop = true; // Loop background music
+        
+        // If there's current music playing, crossfade
+        if (currentBackgroundMusic.value && !currentBackgroundMusic.value.paused) {
+          log("Crossfading from current music to new music");
+          
+          // Fade out current music
+          const fadeOutInterval = setInterval(() => {
+            if (currentBackgroundMusic.value && currentBackgroundMusic.value.volume > 0.01) {
+              currentBackgroundMusic.value.volume = Math.max(0, currentBackgroundMusic.value.volume - 0.02);
+            } else {
+              clearInterval(fadeOutInterval);
+              if (currentBackgroundMusic.value) {
+                currentBackgroundMusic.value.pause();
+                currentBackgroundMusic.value = null;
+              }
+            }
+          }, 50);
+          
+          // Start playing new music and fade in
+          newMusic.play().then(() => {
+            const fadeInInterval = setInterval(() => {
+              if (newMusic.volume < backgroundMusicVolume.value) {
+                newMusic.volume = Math.min(backgroundMusicVolume.value, newMusic.volume + 0.02);
+              } else {
+                clearInterval(fadeInInterval);
+              }
+            }, 50);
+          }).catch(error => {
+            log("Error playing background music:", error);
+          });
+        } else {
+          // No current music, just fade in the new music
+          newMusic.play().then(() => {
+            log("Starting new background music");
+            const fadeInInterval = setInterval(() => {
+              if (newMusic.volume < backgroundMusicVolume.value) {
+                newMusic.volume = Math.min(backgroundMusicVolume.value, newMusic.volume + 0.02);
+              } else {
+                clearInterval(fadeInInterval);
+              }
+            }, 50);
+          }).catch(error => {
+            log("Error playing background music:", error);
+          });
+        }
+        
+        currentBackgroundMusic.value = newMusic;
+        currentMusicMood.value = mood;
+        
+      } catch (error) {
+        log("Error creating background music element:", error);
+      }
+    };
+
+    // Watch for background music volume changes
+    watch(backgroundMusicVolume, (newVolume) => {
+      if (currentBackgroundMusic.value && !currentBackgroundMusic.value.paused) {
+        currentBackgroundMusic.value.volume = newVolume;
+      }
+    });
+
+    // Watch for narration volume changes
+    watch(narrationVolume, (newVolume) => {
+      if (currentNarration.value && !currentNarration.value.paused) {
+        currentNarration.value.volume = newVolume;
+      }
+    });
+
+    // Watch for background music enabled changes
+    watch(backgroundMusicEnabled, (enabled) => {
+      if (!enabled && currentBackgroundMusic.value) {
+        // Fade out and stop music
+        const fadeOutInterval = setInterval(() => {
+          if (currentBackgroundMusic.value && currentBackgroundMusic.value.volume > 0.01) {
+            currentBackgroundMusic.value.volume = Math.max(0, currentBackgroundMusic.value.volume - 0.02);
+          } else {
+            clearInterval(fadeOutInterval);
+            if (currentBackgroundMusic.value) {
+              currentBackgroundMusic.value.pause();
+              currentBackgroundMusic.value.currentTime = 0; // Reset to beginning
+            }
+          }
+        }, 50);
+      } else if (enabled && currentBackgroundMusic.value && currentBackgroundMusic.value.paused) {
+        // Resume music with fade in
+        currentBackgroundMusic.value.volume = 0; // Start at 0 for fade in
+        currentBackgroundMusic.value.play();
+        const fadeInInterval = setInterval(() => {
+          if (currentBackgroundMusic.value && currentBackgroundMusic.value.volume < backgroundMusicVolume.value) {
+            currentBackgroundMusic.value.volume = Math.min(backgroundMusicVolume.value, currentBackgroundMusic.value.volume + 0.02);
+          } else {
+            clearInterval(fadeInInterval);
+          }
+        }, 50);
+      }
+    });
+
+    // Watch for narration enabled changes
+    watch(narrationEnabled, (enabled) => {
+      if (!enabled && currentNarration.value && !currentNarration.value.paused) {
+        // Stop current narration immediately
+        log("Stopping current narration as narration was disabled");
+        currentNarration.value.pause();
+        currentNarration.value.currentTime = 0;
+        currentNarration.value = null;
+      }
+    });
+
     onMounted(() => {
       // Game now starts when user clicks "Begin Your Adventure"
     });
@@ -538,6 +733,10 @@ export default defineComponent({
       pollForImage,
       gameStarted,
       beginAdventure,
+      backgroundMusicEnabled,
+      backgroundMusicVolume,
+      currentMusicMood,
+      pollForMusic,
     };
   },
 });

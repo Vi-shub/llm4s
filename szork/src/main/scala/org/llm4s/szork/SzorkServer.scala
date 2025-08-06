@@ -10,7 +10,8 @@ import java.util.concurrent.Executors
 case class GameSession(
   id: String,
   engine: GameEngine,
-  pendingImages: mutable.Map[Int, Option[String]] = mutable.Map.empty
+  pendingImages: mutable.Map[Int, Option[String]] = mutable.Map.empty,
+  pendingMusic: mutable.Map[Int, Option[(String, String)]] = mutable.Map.empty  // (base64, mood)
 )
 
 case class CommandRequest(command: String)
@@ -71,6 +72,20 @@ object SzorkServer extends cask.Main with cask.Routes {
       }(imageEC)
     }
     
+    // Check if the initial scene should have background music
+    if (engine.shouldGenerateBackgroundMusic(initialMessage)) {
+      result("hasMusic") = true
+      // Generate music asynchronously for initial scene
+      Future {
+        logger.info(s"[$sessionId] Starting async music generation for initial scene, message $messageIndex")
+        val musicOpt = engine.generateBackgroundMusic(initialMessage)
+        session.pendingMusic(messageIndex) = musicOpt
+        logger.info(s"[$sessionId] Async music generation completed for initial scene, message $messageIndex")
+      }(imageEC)
+    } else {
+      result("hasMusic") = false
+    }
+    
     result
   }
 
@@ -117,6 +132,20 @@ object SzorkServer extends cask.Main with cask.Routes {
                 session.pendingImages(messageIndex) = imageOpt
                 logger.info(s"Async image generation completed for session $sessionId, message $messageIndex")
               }(imageEC)
+            }
+            
+            // Check if this is a scene that needs background music
+            if (session.engine.shouldGenerateBackgroundMusic(gameResponse.text)) {
+              result("hasMusic") = true
+              // Generate music asynchronously
+              Future {
+                logger.info(s"Starting async music generation for session $sessionId, message $messageIndex")
+                val musicOpt = session.engine.generateBackgroundMusic(gameResponse.text)
+                session.pendingMusic(messageIndex) = musicOpt
+                logger.info(s"Async music generation completed for session $sessionId, message $messageIndex")
+              }(imageEC)
+            } else {
+              result("hasMusic") = false
             }
             
             result
@@ -198,6 +227,20 @@ object SzorkServer extends cask.Main with cask.Routes {
                     }(imageEC)
                   }
                   
+                  // Check if this is a scene that needs background music
+                  if (session.engine.shouldGenerateBackgroundMusic(gameResponse.text)) {
+                    result("hasMusic") = true
+                    // Generate music asynchronously
+                    Future {
+                      logger.info(s"Starting async music generation for session $sessionId, message $messageIndex (audio)")
+                      val musicOpt = session.engine.generateBackgroundMusic(gameResponse.text)
+                      session.pendingMusic(messageIndex) = musicOpt
+                      logger.info(s"Async music generation completed for session $sessionId, message $messageIndex (audio)")
+                    }(imageEC)
+                  } else {
+                    result("hasMusic") = false
+                  }
+                  
                   result
                   
                 case Left(error) =>
@@ -276,6 +319,49 @@ object SzorkServer extends cask.Main with cask.Routes {
     }
   }
   
+  @get("/api/game/music/:sessionId/:messageIndex")
+  def getMusic(sessionId: String, messageIndex: String) = {
+    logger.debug(s"Checking for music: session=$sessionId, message=$messageIndex")
+    
+    try {
+      val index = messageIndex.toInt
+      sessions.get(sessionId) match {
+        case Some(session) =>
+          session.pendingMusic.get(index) match {
+            case Some(Some((musicBase64, mood))) =>
+              logger.info(s"Music found for session $sessionId, message $index, mood: $mood")
+              ujson.Obj(
+                "status" -> "ready",
+                "music" -> musicBase64,
+                "mood" -> mood
+              )
+            case Some(None) =>
+              logger.info(s"Music generation failed for session $sessionId, message $index")
+              ujson.Obj(
+                "status" -> "failed"
+              )
+            case None =>
+              logger.debug(s"Music still generating for session $sessionId, message $index")
+              ujson.Obj(
+                "status" -> "pending"
+              )
+          }
+        case None =>
+          logger.warn(s"Session not found: $sessionId")
+          ujson.Obj(
+            "status" -> "error",
+            "error" -> "Session not found"
+          )
+      }
+    } catch {
+      case _: NumberFormatException =>
+        ujson.Obj(
+          "status" -> "error",
+          "error" -> "Invalid message index"
+        )
+    }
+  }
+  
   @get("/api/game/session/:sessionId")
   def getSession(sessionId: String) = {
     logger.debug(s"Getting session info for: $sessionId")
@@ -307,6 +393,14 @@ object SzorkServer extends cask.Main with cask.Routes {
       |</html>""".stripMargin
   }
 
+  // Check music generation availability
+  private val musicGen = MusicGeneration()
+  if (musicGen.isAvailable) {
+    logger.info("Background music generation is ENABLED")
+  } else {
+    logger.warn("Background music generation is DISABLED - configure REPLICATE_API_KEY to enable")
+  }
+  
   logger.info("Starting Szork Server on http://localhost:8080")
   logger.info("API endpoints:")
   logger.info("  POST /api/game/start - Start a new game session")
