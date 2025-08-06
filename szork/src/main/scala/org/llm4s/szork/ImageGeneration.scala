@@ -6,7 +6,7 @@ import org.llm4s.config.EnvLoader
 import ujson._
 
 class ImageGeneration {
-  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger("ImageGen")
   private val apiKey = EnvLoader.get("OPENAI_API_KEY").getOrElse(
     throw new IllegalStateException("OPENAI_API_KEY not found in environment")
   )
@@ -27,9 +27,11 @@ class ImageGeneration {
           "model" -> "dall-e-2",
           "prompt" -> fullPrompt,
           "n" -> 1,
-          "size" -> "512x512",
+          "size" -> "256x256",
           "response_format" -> "b64_json"
-        ).toString
+        ).toString,
+        readTimeout = 30000,  // 30 seconds for DALL-E to generate image
+        connectTimeout = 10000  // 10 seconds to establish connection
       )
       
       if (response.statusCode == 200) {

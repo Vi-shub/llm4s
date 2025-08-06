@@ -6,8 +6,8 @@ import org.llm4s.llmconnect.model.{LLMError, UserMessage, AssistantMessage}
 import org.llm4s.toolapi.ToolRegistry
 import org.slf4j.LoggerFactory
 
-class GameEngine {
-  private val logger = LoggerFactory.getLogger(getClass)
+class GameEngine(sessionId: String = "") {
+  private val logger = LoggerFactory.getLogger("GameEngine")
   
   private val gamePrompt =
     """You are a Dungeon Master guiding a fantasy text adventure game.
@@ -36,7 +36,7 @@ class GameEngine {
   private var currentState: AgentState = _
   
   def initialize(): String = {
-    logger.info("Initializing new game engine")
+    logger.info(s"[$sessionId] Initializing game")
     currentState = agent.initialize(
       "Let's begin the adventure! Start by describing the initial scene where the player begins their journey.",
       toolRegistry,
@@ -50,19 +50,19 @@ class GameEngine {
         // Extract the initial scene description from the agent's response
         val assistantMessages = newState.conversation.messages.collect { case msg: AssistantMessage => msg }
         val initialScene = assistantMessages.headOption.map(_.content).getOrElse("You find yourself at the entrance of a mysterious dungeon.")
-        logger.info(s"Game initialized with scene: ${initialScene.take(50)}...")
+        logger.info(s"[$sessionId] Game initialized with scene: ${initialScene.take(50)}...")
         initialScene
         
       case Left(error) =>
-        logger.error(s"Failed to initialize game: $error")
+        logger.error(s"[$sessionId] Failed to initialize game: $error")
         "Welcome to the adventure! You stand at the entrance of a dark dungeon. Stone steps lead down into darkness. Exits: north (into dungeon)."
     }
   }
   
   case class GameResponse(text: String, audioBase64: Option[String] = None, imageBase64: Option[String] = None)
   
-  def processCommand(command: String, generateAudio: Boolean = true, generateImage: Boolean = false): Either[LLMError, GameResponse] = {
-    logger.debug(s"Processing command: $command")
+  def processCommand(command: String, generateAudio: Boolean = true): Either[LLMError, GameResponse] = {
+    logger.debug(s"[$sessionId] Processing command: $command")
     
     // Track message count before adding user message
     val previousMessageCount = currentState.conversation.messages.length
@@ -87,42 +87,29 @@ class GameEngine {
         
         // Generate audio if requested
         val audioBase64 = if (generateAudio && responseText.nonEmpty) {
-          logger.info(s"Generating audio for response (generateAudio=$generateAudio, text length=${responseText.length})")
+          val audioStartTime = System.currentTimeMillis()
+          logger.info(s"[$sessionId] Generating audio (${responseText.length} chars)")
           val tts = TextToSpeech()
           tts.synthesizeToBase64(responseText, TextToSpeech.VOICE_NOVA) match {
             case Right(audio) => 
-              logger.info(s"Generated audio narration for response, base64 length: ${audio.length}")
+              val audioTime = System.currentTimeMillis() - audioStartTime
+              logger.info(s"[$sessionId] Audio generated in ${audioTime}ms, base64: ${audio.length}")
               Some(audio)
             case Left(error) => 
-              logger.error(s"Failed to generate audio: $error")
+              logger.error(s"[$sessionId] Failed to generate audio: $error")
               None
           }
         } else {
-          logger.info(s"Skipping audio generation (generateAudio=$generateAudio, text empty=${responseText.isEmpty})")
+          logger.info(s"[$sessionId] Skipping audio (generateAudio=$generateAudio, empty=${responseText.isEmpty})")
           None
         }
         
-        // Generate image if requested and it's a new scene
-        val imageBase64 = if (generateImage && isNewScene(responseText)) {
-          logger.info(s"Generating image for new scene")
-          val imageGen = ImageGeneration()
-          val scenePrompt = extractSceneDescription(responseText)
-          imageGen.generateScene(scenePrompt, ImageGeneration.STYLE_FANTASY) match {
-            case Right(image) =>
-              logger.info(s"Generated scene image, base64 length: ${image.length}")
-              Some(image)
-            case Left(error) =>
-              logger.error(s"Failed to generate image: $error")
-              None
-          }
-        } else {
-          None
-        }
+        // Image generation is now handled asynchronously in the server
         
-        Right(GameResponse(responseText, audioBase64, imageBase64))
+        Right(GameResponse(responseText, audioBase64, None))
         
       case Left(error) =>
-        logger.error(s"Error processing command: $error")
+        logger.error(s"[$sessionId] Error processing command: $error")
         Left(error)
     }
   }
@@ -130,6 +117,24 @@ class GameEngine {
   def getMessageCount: Int = currentState.conversation.messages.length
   
   def getState: AgentState = currentState
+  
+  def generateSceneImage(responseText: String): Option[String] = {
+    if (isNewScene(responseText)) {
+      logger.info(s"[$sessionId] Generating scene image")
+      val imageGen = ImageGeneration()
+      val scenePrompt = extractSceneDescription(responseText)
+      imageGen.generateScene(scenePrompt, ImageGeneration.STYLE_FANTASY) match {
+        case Right(image) =>
+          logger.info(s"[$sessionId] Scene image generated, base64: ${image.length}")
+          Some(image)
+        case Left(error) =>
+          logger.error(s"[$sessionId] Failed to generate image: $error")
+          None
+      }
+    } else {
+      None
+    }
+  }
   
   private def isNewScene(response: String): Boolean = {
     // Detect if this is a new scene based on keywords
@@ -167,5 +172,5 @@ class GameEngine {
 }
 
 object GameEngine {
-  def create(): GameEngine = new GameEngine()
+  def create(sessionId: String = ""): GameEngine = new GameEngine(sessionId)
 }

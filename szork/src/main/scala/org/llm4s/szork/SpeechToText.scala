@@ -7,7 +7,7 @@ import java.io.File
 import java.nio.file.Files
 
 class SpeechToText {
-  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger("STT")
   private val apiKey = EnvLoader.get("OPENAI_API_KEY").getOrElse(
     throw new IllegalStateException("OPENAI_API_KEY not found in environment")
   )

@@ -4,10 +4,13 @@ import cask._
 import scala.collection.mutable
 import org.slf4j.LoggerFactory
 import java.util.Base64
+import scala.concurrent.{Future, ExecutionContext}
+import java.util.concurrent.Executors
 
 case class GameSession(
   id: String,
-  engine: GameEngine
+  engine: GameEngine,
+  pendingImages: mutable.Map[Int, Option[String]] = mutable.Map.empty
 )
 
 case class CommandRequest(command: String)
@@ -15,8 +18,10 @@ case class CommandResponse(response: String, sessionId: String)
 
 object SzorkServer extends cask.Main with cask.Routes {
   
-  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger = LoggerFactory.getLogger("SzorkServer")
   private val sessions = mutable.Map[String, GameSession]()
+  private val imageExecutor = Executors.newFixedThreadPool(4)
+  private implicit val imageEC: ExecutionContext = ExecutionContext.fromExecutor(imageExecutor)
 
 
   @get("/api/health")
@@ -33,7 +38,7 @@ object SzorkServer extends cask.Main with cask.Routes {
     logger.info("Starting new game session")
     val sessionId = java.util.UUID.randomUUID().toString
     
-    val engine = GameEngine.create()
+    val engine = GameEngine.create(sessionId)
     val initialMessage = engine.initialize()
     
     val session = GameSession(
@@ -42,13 +47,31 @@ object SzorkServer extends cask.Main with cask.Routes {
     )
     
     sessions(sessionId) = session
-    logger.info(s"Game session started: $sessionId")
+    logger.info(s"[$sessionId] Game session started")
     
-    ujson.Obj(
+    val messageIndex = engine.getMessageCount - 1
+    val result = ujson.Obj(
       "sessionId" -> sessionId,
       "message" -> initialMessage,
-      "status" -> "started"
+      "status" -> "started",
+      "messageIndex" -> messageIndex
     )
+    
+    // Check if the initial scene should have an image
+    if (engine.generateSceneImage(initialMessage).isEmpty) {
+      result("hasImage") = false
+    } else {
+      result("hasImage") = true
+      // Generate image asynchronously for initial scene
+      Future {
+        logger.info(s"[$sessionId] Starting async image generation for initial scene, message $messageIndex")
+        val imageOpt = engine.generateSceneImage(initialMessage)
+        session.pendingImages(messageIndex) = imageOpt
+        logger.info(s"[$sessionId] Async image generation completed for initial scene, message $messageIndex")
+      }(imageEC)
+    }
+    
+    result
   }
 
   @post("/api/game/command")
@@ -69,10 +92,12 @@ object SzorkServer extends cask.Main with cask.Routes {
             val processingTime = System.currentTimeMillis() - startTime
             logger.info(s"Command processed successfully for session $sessionId in ${processingTime}ms")
             
+            val messageIndex = session.engine.getMessageCount - 1
             val result = ujson.Obj(
               "sessionId" -> sessionId,
               "response" -> gameResponse.text,
-              "status" -> "success"
+              "status" -> "success",
+              "messageIndex" -> messageIndex
             )
             
             // Add audio if generated
@@ -80,9 +105,18 @@ object SzorkServer extends cask.Main with cask.Routes {
               result("audio") = audio
             }
             
-            // Add image if generated
-            gameResponse.imageBase64.foreach { image =>
-              result("image") = image
+            // Check if this is a scene that needs an image
+            if (session.engine.generateSceneImage(gameResponse.text).isEmpty) {
+              result("hasImage") = false
+            } else {
+              result("hasImage") = true
+              // Generate image asynchronously
+              Future {
+                logger.info(s"Starting async image generation for session $sessionId, message $messageIndex")
+                val imageOpt = session.engine.generateSceneImage(gameResponse.text)
+                session.pendingImages(messageIndex) = imageOpt
+                logger.info(s"Async image generation completed for session $sessionId, message $messageIndex")
+              }(imageEC)
             }
             
             result
@@ -136,11 +170,13 @@ object SzorkServer extends cask.Main with cask.Routes {
                   val processingTime = System.currentTimeMillis() - startTime
                   logger.info(s"Audio command processed successfully for session $sessionId in ${processingTime}ms")
                   
+                  val messageIndex = session.engine.getMessageCount - 1
                   val result = ujson.Obj(
                     "sessionId" -> sessionId,
                     "transcription" -> transcribedText,
                     "response" -> gameResponse.text,
-                    "status" -> "success"
+                    "status" -> "success",
+                    "messageIndex" -> messageIndex
                   )
                   
                   // Add audio if generated
@@ -148,9 +184,18 @@ object SzorkServer extends cask.Main with cask.Routes {
                     result("audio") = audio
                   }
                   
-                  // Add image if generated
-                  gameResponse.imageBase64.foreach { image =>
-                    result("image") = image
+                  // Check if this is a scene that needs an image
+                  if (session.engine.generateSceneImage(gameResponse.text).isEmpty) {
+                    result("hasImage") = false
+                  } else {
+                    result("hasImage") = true
+                    // Generate image asynchronously
+                    Future {
+                      logger.info(s"Starting async image generation for session $sessionId, message $messageIndex (audio)")
+                      val imageOpt = session.engine.generateSceneImage(gameResponse.text)
+                      session.pendingImages(messageIndex) = imageOpt
+                      logger.info(s"Async image generation completed for session $sessionId, message $messageIndex (audio)")
+                    }(imageEC)
                   }
                   
                   result
@@ -189,6 +234,48 @@ object SzorkServer extends cask.Main with cask.Routes {
     }
   }
 
+  @get("/api/game/image/:sessionId/:messageIndex")
+  def getImage(sessionId: String, messageIndex: String) = {
+    logger.debug(s"Checking for image: session=$sessionId, message=$messageIndex")
+    
+    try {
+      val index = messageIndex.toInt
+      sessions.get(sessionId) match {
+        case Some(session) =>
+          session.pendingImages.get(index) match {
+            case Some(Some(imageBase64)) =>
+              logger.info(s"Image found for session $sessionId, message $index")
+              ujson.Obj(
+                "status" -> "ready",
+                "image" -> imageBase64
+              )
+            case Some(None) =>
+              logger.info(s"Image generation failed for session $sessionId, message $index")
+              ujson.Obj(
+                "status" -> "failed"
+              )
+            case None =>
+              logger.debug(s"Image still generating for session $sessionId, message $index")
+              ujson.Obj(
+                "status" -> "pending"
+              )
+          }
+        case None =>
+          logger.warn(s"Session not found: $sessionId")
+          ujson.Obj(
+            "status" -> "error",
+            "error" -> "Session not found"
+          )
+      }
+    } catch {
+      case _: NumberFormatException =>
+        ujson.Obj(
+          "status" -> "error",
+          "error" -> "Invalid message index"
+        )
+    }
+  }
+  
   @get("/api/game/session/:sessionId")
   def getSession(sessionId: String) = {
     logger.debug(s"Getting session info for: $sessionId")
