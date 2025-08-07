@@ -35,10 +35,10 @@ export default defineConfig({
     extensions: [".js", ".json", ".jsx", ".mjs", ".ts", ".tsx", ".vue"],
   },
   server: {
-    port: 3000,
+    port: 3090,
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://localhost:8090",
         changeOrigin: true,
       },
     },

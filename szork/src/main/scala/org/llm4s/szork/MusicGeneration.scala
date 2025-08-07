@@ -18,28 +18,117 @@ class MusicGeneration {
   
   case class MusicMood(
     name: String,
-    prompt: String,
-    duration: Int = 10  // seconds
-  )
-  
-  object MusicMoods {
-    val ENTRANCE = MusicMood("entrance", "mysterious cave entrance, ambient, dark, foreboding, orchestral fantasy")
-    val EXPLORATION = MusicMood("exploration", "adventurous, curious, light orchestral, fantasy exploration")
-    val COMBAT = MusicMood("combat", "intense battle music, fast drums, dramatic orchestral, action")
-    val VICTORY = MusicMood("victory", "triumphant fanfare, heroic, celebratory orchestral")
-    val DUNGEON = MusicMood("dungeon", "dark dungeon ambience, ominous, suspenseful, low strings")
-    val FOREST = MusicMood("forest", "peaceful forest, nature sounds, soft flutes, mystical")
-    val TOWN = MusicMood("town", "medieval town, bustling marketplace, folk instruments, cheerful")
-    val MYSTERY = MusicMood("mystery", "mysterious, puzzle solving, subtle tension, contemplative")
+    basePrompt: String,
+    duration: Int = 10,  // seconds
+    temperature: Double = 1.0,  // Generation randomness
+    topK: Int = 250,
+    topP: Double = 0.0,
+    cfGuidance: Int = 3
+  ) {
+    def generatePrompt(context: String = ""): String = {
+      // Add context-aware variations to the base prompt
+      val contextualAdditions = extractContextualElements(context)
+      s"$basePrompt${if (contextualAdditions.nonEmpty) s", $contextualAdditions" else ""}"
+    }
+    
+    private def extractContextualElements(text: String): String = {
+      val lowerText = text.toLowerCase
+      val elements = scala.collection.mutable.ListBuffer[String]()
+      
+      // Add atmospheric elements based on context
+      if (lowerText.contains("rain") || lowerText.contains("storm")) elements += "rain sounds"
+      if (lowerText.contains("wind")) elements += "wind effects"
+      if (lowerText.contains("fire") || lowerText.contains("torch")) elements += "crackling fire"
+      if (lowerText.contains("water") || lowerText.contains("stream")) elements += "flowing water"
+      if (lowerText.contains("echo")) elements += "reverb effects"
+      
+      // Add emotional modifiers
+      if (lowerText.contains("tense")) elements += "building tension"
+      if (lowerText.contains("peaceful")) elements += "serene atmosphere"
+      if (lowerText.contains("danger")) elements += "threatening undertones"
+      if (lowerText.contains("ancient")) elements += "ancient mystical"
+      if (lowerText.contains("magic")) elements += "magical sparkles"
+      
+      elements.mkString(", ")
+    }
   }
   
-  def generateMusic(mood: MusicMood): Either[String, String] = {
+  object MusicMoods {
+    // Main location moods with more variety
+    val ENTRANCE = MusicMood("entrance", 
+      "mysterious cave entrance, deep ambient drones, distant echoes, foreboding orchestral, dark fantasy atmosphere", 
+      duration = 12, temperature = 0.9)
+    
+    val EXPLORATION = MusicMood("exploration", 
+      "adventurous fantasy exploration, light orchestral strings, curious woodwinds, hopeful melodies, discovery theme",
+      duration = 10, temperature = 1.0)
+    
+    val COMBAT = MusicMood("combat", 
+      "intense battle music, war drums, aggressive strings, brass stabs, epic orchestral combat, fast tempo action",
+      duration = 8, temperature = 0.8, cfGuidance = 4)
+    
+    val VICTORY = MusicMood("victory", 
+      "triumphant fanfare, heroic brass section, celebratory orchestral, epic victory theme, uplifting crescendo",
+      duration = 8, temperature = 0.7)
+    
+    val DUNGEON = MusicMood("dungeon", 
+      "dark dungeon ambience, ominous low strings, dripping water, distant chains, suspenseful horror atmosphere",
+      duration = 12, temperature = 1.1)
+    
+    val FOREST = MusicMood("forest", 
+      "enchanted forest ambience, bird songs, rustling leaves, soft Celtic flutes, mystical harp, nature magic",
+      duration = 12, temperature = 1.0)
+    
+    val TOWN = MusicMood("town", 
+      "medieval town square, lute and mandolin, bustling marketplace, folk dance rhythm, cheerful tavern music",
+      duration = 10, temperature = 0.9)
+    
+    val MYSTERY = MusicMood("mystery", 
+      "mysterious puzzle atmosphere, subtle piano, ethereal pads, contemplative strings, building intrigue",
+      duration = 10, temperature = 1.2)
+    
+    // Additional atmospheric moods
+    val CASTLE = MusicMood("castle",
+      "grand castle hall, regal horns, medieval court music, stone echoes, nobility theme, harpsichord",
+      duration = 10, temperature = 0.8)
+    
+    val UNDERWATER = MusicMood("underwater",
+      "underwater cavern, muffled sounds, whale songs, bubbling effects, mysterious aquatic ambience",
+      duration = 12, temperature = 1.3)
+    
+    val TEMPLE = MusicMood("temple",
+      "ancient temple, Gregorian chants, sacred bells, divine atmosphere, ethereal choir, spiritual resonance",
+      duration = 12, temperature = 0.9)
+    
+    val BOSS = MusicMood("boss",
+      "epic boss battle, massive orchestral, choir vocals, intense percussion, dark powerful theme, climactic",
+      duration = 10, temperature = 0.7, cfGuidance = 5)
+    
+    val STEALTH = MusicMood("stealth",
+      "stealthy infiltration, minimal percussion, tense strings, quiet footsteps, suspenseful atmosphere",
+      duration = 10, temperature = 1.0)
+    
+    val TREASURE = MusicMood("treasure",
+      "treasure discovery, magical chimes, sparkling sounds, wonder and awe, mystical revelation",
+      duration = 8, temperature = 0.8)
+    
+    val DANGER = MusicMood("danger",
+      "imminent danger, rising tension, warning drums, dissonant strings, heart-pounding suspense",
+      duration = 8, temperature = 0.9, cfGuidance = 4)
+    
+    val PEACEFUL = MusicMood("peaceful",
+      "peaceful resting place, soft piano, gentle strings, calm breathing space, meditative atmosphere",
+      duration = 12, temperature = 1.0)
+  }
+  
+  def generateMusic(mood: MusicMood, context: String = ""): Either[String, String] = {
     if (!isAvailable) {
       logger.warn("Music generation disabled - REPLICATE_API_KEY not configured")
       return Left("Music generation not available")
     }
     
-    logger.info(s"Generating music for mood: ${mood.name}")
+    val prompt = mood.generatePrompt(context)
+    logger.info(s"Generating music for mood: ${mood.name}, prompt: $prompt")
     
     try {
       // Create prediction
@@ -52,12 +141,12 @@ class MusicGeneration {
         data = Obj(
           "version" -> "671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb",
           "input" -> Obj(
-            "prompt" -> mood.prompt,
+            "prompt" -> prompt,
             "duration" -> mood.duration,
-            "temperature" -> 1.0,
-            "top_k" -> 250,
-            "top_p" -> 0.0,
-            "classifier_free_guidance" -> 3
+            "temperature" -> mood.temperature,
+            "top_k" -> mood.topK,
+            "top_p" -> mood.topP,
+            "classifier_free_guidance" -> mood.cfGuidance
           )
         ).toString
       )
@@ -168,22 +257,90 @@ class MusicGeneration {
   def detectMoodFromText(text: String): MusicMood = {
     val lowerText = text.toLowerCase
     
-    if (lowerText.contains("battle") || lowerText.contains("attack") || lowerText.contains("fight")) {
-      MusicMoods.COMBAT
-    } else if (lowerText.contains("victory") || lowerText.contains("defeated") || lowerText.contains("won")) {
-      MusicMoods.VICTORY
-    } else if (lowerText.contains("dungeon") || lowerText.contains("dark") || lowerText.contains("cave")) {
-      MusicMoods.DUNGEON
-    } else if (lowerText.contains("forest") || lowerText.contains("trees") || lowerText.contains("nature")) {
-      MusicMoods.FOREST
-    } else if (lowerText.contains("town") || lowerText.contains("village") || lowerText.contains("market")) {
-      MusicMoods.TOWN
-    } else if (lowerText.contains("puzzle") || lowerText.contains("mystery") || lowerText.contains("riddle")) {
-      MusicMoods.MYSTERY
-    } else if (lowerText.contains("entrance") || lowerText.contains("begin")) {
-      MusicMoods.ENTRANCE
-    } else {
+    // Priority-based mood detection with weighted scoring
+    val moodScores = scala.collection.mutable.Map[MusicMood, Int]()
+    
+    // Combat scenarios
+    if (lowerText.contains("boss") || lowerText.contains("final battle") || lowerText.contains("powerful enemy")) {
+      moodScores(MusicMoods.BOSS) = 10
+    }
+    if (lowerText.contains("battle") || lowerText.contains("attack") || lowerText.contains("fight") || 
+        lowerText.contains("combat") || lowerText.contains("enemy")) {
+      moodScores(MusicMoods.COMBAT) = 8
+    }
+    
+    // Victory and achievement
+    if (lowerText.contains("victory") || lowerText.contains("defeated") || lowerText.contains("won") || 
+        lowerText.contains("triumph") || lowerText.contains("conquered")) {
+      moodScores(MusicMoods.VICTORY) = 9
+    }
+    if (lowerText.contains("treasure") || lowerText.contains("gold") || lowerText.contains("reward") || 
+        lowerText.contains("chest") || lowerText.contains("loot")) {
+      moodScores(MusicMoods.TREASURE) = 8
+    }
+    
+    // Locations - Dungeon/Cave
+    if (lowerText.contains("dungeon") || lowerText.contains("dark") || lowerText.contains("cave") || 
+        lowerText.contains("underground") || lowerText.contains("cavern")) {
+      moodScores(MusicMoods.DUNGEON) = 7
+    }
+    
+    // Locations - Natural
+    if (lowerText.contains("forest") || lowerText.contains("trees") || lowerText.contains("woods") || 
+        lowerText.contains("grove") || lowerText.contains("nature")) {
+      moodScores(MusicMoods.FOREST) = 7
+    }
+    if (lowerText.contains("underwater") || lowerText.contains("lake") || lowerText.contains("ocean") || 
+        lowerText.contains("river") || lowerText.contains("aquatic")) {
+      moodScores(MusicMoods.UNDERWATER) = 8
+    }
+    
+    // Locations - Civilized
+    if (lowerText.contains("castle") || lowerText.contains("throne") || lowerText.contains("palace") || 
+        lowerText.contains("royal") || lowerText.contains("court")) {
+      moodScores(MusicMoods.CASTLE) = 7
+    }
+    if (lowerText.contains("temple") || lowerText.contains("shrine") || lowerText.contains("altar") || 
+        lowerText.contains("sacred") || lowerText.contains("holy")) {
+      moodScores(MusicMoods.TEMPLE) = 7
+    }
+    if (lowerText.contains("town") || lowerText.contains("village") || lowerText.contains("market") || 
+        lowerText.contains("inn") || lowerText.contains("tavern")) {
+      moodScores(MusicMoods.TOWN) = 6
+    }
+    
+    // Atmosphere and situations
+    if (lowerText.contains("sneak") || lowerText.contains("stealth") || lowerText.contains("hide") || 
+        lowerText.contains("quietly") || lowerText.contains("silent")) {
+      moodScores(MusicMoods.STEALTH) = 8
+    }
+    if (lowerText.contains("danger") || lowerText.contains("warning") || lowerText.contains("trap") || 
+        lowerText.contains("careful") || lowerText.contains("threat")) {
+      moodScores(MusicMoods.DANGER) = 7
+    }
+    if (lowerText.contains("puzzle") || lowerText.contains("mystery") || lowerText.contains("riddle") || 
+        lowerText.contains("strange") || lowerText.contains("mysterious")) {
+      moodScores(MusicMoods.MYSTERY) = 6
+    }
+    if (lowerText.contains("rest") || lowerText.contains("safe") || lowerText.contains("peaceful") || 
+        lowerText.contains("calm") || lowerText.contains("relax")) {
+      moodScores(MusicMoods.PEACEFUL) = 7
+    }
+    
+    // Entry points
+    if (lowerText.contains("entrance") || lowerText.contains("begin") || lowerText.contains("start") || 
+        lowerText.contains("doorway") || lowerText.contains("threshold")) {
+      moodScores(MusicMoods.ENTRANCE) = 5
+    }
+    
+    // Default exploration mood gets a base score
+    moodScores(MusicMoods.EXPLORATION) = 3
+    
+    // Return the mood with the highest score
+    if (moodScores.isEmpty) {
       MusicMoods.EXPLORATION
+    } else {
+      moodScores.maxBy(_._2)._1
     }
   }
 }

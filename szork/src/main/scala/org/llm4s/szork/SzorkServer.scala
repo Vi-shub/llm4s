@@ -388,7 +388,7 @@ object SzorkServer extends cask.Main with cask.Routes {
       |<head><title>Szork</title></head>
       |<body>
       |<h1>Szork Server</h1>
-      |<p>Use the frontend at http://localhost:3000 or the API endpoints directly.</p>
+      |<p>Use the frontend at http://localhost:3090 or the API endpoints directly.</p>
       |</body>
       |</html>""".stripMargin
   }
@@ -400,22 +400,12 @@ object SzorkServer extends cask.Main with cask.Routes {
   } else {
     logger.warn("Background music generation is DISABLED - configure REPLICATE_API_KEY to enable")
   }
-  
-  logger.info("Starting Szork Server on http://localhost:8080")
-  logger.info("API endpoints:")
-  logger.info("  POST /api/game/start - Start a new game session")
-  logger.info("  POST /api/game/command - Send a command to the game")
-  logger.info("  GET  /api/game/session/:id - Get session info")
-  
-  println("Starting Szork Server on http://localhost:8080")
-  println("API endpoints:")
-  println("  POST /api/game/start - Start a new game session")
-  println("  POST /api/game/command - Send a command to the game")
-  println("  GET  /api/game/session/:id - Get session info")
 
-  override def verbose: Boolean = true
-  override def port: Int = 8080
+  override def port: Int = 8090
   override def host: String = "0.0.0.0"
+
+  logger.info(s"Starting Szork Server on http://$host:$port")
+
   
   def allRoutes = Seq(this)
   

@@ -201,9 +201,10 @@ class GameEngine(sessionId: String = "") {
         }
         
         val mood = musicGen.detectMoodFromText(responseText)
-        logger.info(s"[$sessionId] Detected mood: ${mood.name}, generating background music")
+        logger.info(s"[$sessionId] Detected mood: ${mood.name}, generating background music with context")
         
-        musicGen.generateMusic(mood) match {
+        // Pass the full context to generate more dynamic music
+        musicGen.generateMusic(mood, responseText) match {
           case Right(musicBase64) =>
             logger.info(s"[$sessionId] Background music generated for mood: ${mood.name}, base64: ${musicBase64.length}")
             Some((musicBase64, mood.name))

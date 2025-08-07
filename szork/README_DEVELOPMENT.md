@@ -37,7 +37,7 @@ The frontend is in `szork/frontend`. To develop:
    npm run dev
    ```
 
-The frontend dev server runs on http://localhost:3000 and proxies API calls to the backend on port 8080.
+The frontend dev server runs on http://localhost:3090 and proxies API calls to the backend on port 8090.
 
 ## Architecture
 
