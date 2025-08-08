@@ -1,6 +1,6 @@
 package org.llm4s.trace
 
-import org.llm4s.llmconnect.model.{ TokenUsage, Completion }
+import org.llm4s.llmconnect.model.TokenUsage
 import java.time.Instant
 
 /**

@@ -275,8 +275,8 @@ class EnhancedLangfuseTracing(
           "version"     -> version,
           "public"      -> true,
           "name"        -> "LLM4S Agent Run",
-          "input"       -> firstUserMessage.map(_.content).getOrElse("No user input"),
-          "output"      -> lastAssistantMessage.map(_.content).getOrElse("No response"),
+          "input"       -> ujson.Str(firstUserMessage.map(_.content).getOrElse("No user input")),
+          "output"      -> ujson.Str(lastAssistantMessage.map(_.content).getOrElse("No response")),
           "userId"      -> "llm4s-user",
           "sessionId"   -> sessionId,
           "metadata" -> ujson.Obj(
