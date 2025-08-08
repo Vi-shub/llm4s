@@ -1,9 +1,8 @@
 package org.llm4s.trace
 
-import org.llm4s.agent.AgentState
-import org.llm4s.llmconnect.model.{TokenUsage, Completion}
 import org.llm4s.error.LLMError
-import scala.util.{Success, Failure, Try}
+import org.llm4s.agent.AgentState
+import org.llm4s.llmconnect.model.{ TokenUsage, Completion }
 
 /**
  * Enhanced type-safe tracing interface using functional composition
@@ -15,7 +14,7 @@ trait EnhancedTracing {
   def traceError(error: Throwable, context: String = ""): Either[LLMError, Unit]
   def traceCompletion(completion: Completion, model: String): Either[LLMError, Unit]
   def traceTokenUsage(usage: TokenUsage, model: String, operation: String): Either[LLMError, Unit]
-  
+
   // Convenience methods that delegate to traceEvent
   final def traceEvent(event: String): Either[LLMError, Unit] = {
     val traceEvent = TraceEvent.CustomEvent(event, ujson.Obj())
@@ -28,7 +27,7 @@ trait EnhancedTracing {
  */
 trait TracingComposer {
   def combine(tracers: EnhancedTracing*): EnhancedTracing = new CompositeTracing(tracers.toVector)
-  def filter(tracer: EnhancedTracing)(predicate: TraceEvent => Boolean): EnhancedTracing = 
+  def filter(tracer: EnhancedTracing)(predicate: TraceEvent => Boolean): EnhancedTracing =
     new FilteredTracing(tracer, predicate)
   def transform(tracer: EnhancedTracing)(f: TraceEvent => TraceEvent): EnhancedTracing =
     new TransformedTracing(tracer, f)
@@ -43,7 +42,7 @@ private class CompositeTracing(tracers: Vector[EnhancedTracing]) extends Enhance
     val errors = results.collect { case Left(error) => error }
     if (errors.size == results.size) Left(errors.head) else Right(())
   }
-  
+
   def traceAgentState(state: AgentState): Either[LLMError, Unit] = {
     val event = TraceEvent.AgentStateUpdated(
       status = state.status.toString,
@@ -52,17 +51,17 @@ private class CompositeTracing(tracers: Vector[EnhancedTracing]) extends Enhance
     )
     traceEvent(event)
   }
-  
+
   def traceToolCall(toolName: String, input: String, output: String): Either[LLMError, Unit] = {
     val event = TraceEvent.ToolExecuted(toolName, input, output, 0, true)
     traceEvent(event)
   }
-  
+
   def traceError(error: Throwable, context: String): Either[LLMError, Unit] = {
     val event = TraceEvent.ErrorOccurred(error, context)
     traceEvent(event)
   }
-  
+
   def traceCompletion(completion: Completion, model: String): Either[LLMError, Unit] = {
     val event = TraceEvent.CompletionReceived(
       id = completion.id,
@@ -72,7 +71,7 @@ private class CompositeTracing(tracers: Vector[EnhancedTracing]) extends Enhance
     )
     traceEvent(event)
   }
-  
+
   def traceTokenUsage(usage: TokenUsage, model: String, operation: String): Either[LLMError, Unit] = {
     val event = TraceEvent.TokenUsageRecorded(usage, model, operation)
     traceEvent(event)
@@ -80,27 +79,32 @@ private class CompositeTracing(tracers: Vector[EnhancedTracing]) extends Enhance
 }
 
 private class FilteredTracing(underlying: EnhancedTracing, predicate: TraceEvent => Boolean) extends EnhancedTracing {
-  def traceEvent(event: TraceEvent): Either[LLMError, Unit] = {
+  def traceEvent(event: TraceEvent): Either[LLMError, Unit] =
     if (predicate(event)) underlying.traceEvent(event) else Right(())
-  }
-  
+
   def traceAgentState(state: AgentState): Either[LLMError, Unit] = underlying.traceAgentState(state)
-  def traceToolCall(toolName: String, input: String, output: String): Either[LLMError, Unit] = underlying.traceToolCall(toolName, input, output)
+  def traceToolCall(toolName: String, input: String, output: String): Either[LLMError, Unit] =
+    underlying.traceToolCall(toolName, input, output)
   def traceError(error: Throwable, context: String): Either[LLMError, Unit] = underlying.traceError(error, context)
-  def traceCompletion(completion: Completion, model: String): Either[LLMError, Unit] = underlying.traceCompletion(completion, model)
-  def traceTokenUsage(usage: TokenUsage, model: String, operation: String): Either[LLMError, Unit] = underlying.traceTokenUsage(usage, model, operation)
+  def traceCompletion(completion: Completion, model: String): Either[LLMError, Unit] =
+    underlying.traceCompletion(completion, model)
+  def traceTokenUsage(usage: TokenUsage, model: String, operation: String): Either[LLMError, Unit] =
+    underlying.traceTokenUsage(usage, model, operation)
 }
 
-private class TransformedTracing(underlying: EnhancedTracing, transform: TraceEvent => TraceEvent) extends EnhancedTracing {
-  def traceEvent(event: TraceEvent): Either[LLMError, Unit] = {
+private class TransformedTracing(underlying: EnhancedTracing, transform: TraceEvent => TraceEvent)
+    extends EnhancedTracing {
+  def traceEvent(event: TraceEvent): Either[LLMError, Unit] =
     underlying.traceEvent(transform(event))
-  }
-  
+
   def traceAgentState(state: AgentState): Either[LLMError, Unit] = underlying.traceAgentState(state)
-  def traceToolCall(toolName: String, input: String, output: String): Either[LLMError, Unit] = underlying.traceToolCall(toolName, input, output)
+  def traceToolCall(toolName: String, input: String, output: String): Either[LLMError, Unit] =
+    underlying.traceToolCall(toolName, input, output)
   def traceError(error: Throwable, context: String): Either[LLMError, Unit] = underlying.traceError(error, context)
-  def traceCompletion(completion: Completion, model: String): Either[LLMError, Unit] = underlying.traceCompletion(completion, model)
-  def traceTokenUsage(usage: TokenUsage, model: String, operation: String): Either[LLMError, Unit] = underlying.traceTokenUsage(usage, model, operation)
+  def traceCompletion(completion: Completion, model: String): Either[LLMError, Unit] =
+    underlying.traceCompletion(completion, model)
+  def traceTokenUsage(usage: TokenUsage, model: String, operation: String): Either[LLMError, Unit] =
+    underlying.traceTokenUsage(usage, model, operation)
 }
 
 /**
@@ -110,14 +114,14 @@ sealed trait TracingMode extends Product with Serializable
 
 object TracingMode {
   case object Langfuse extends TracingMode
-  case object Console extends TracingMode
-  case object NoOp extends TracingMode
-  
+  case object Console  extends TracingMode
+  case object NoOp     extends TracingMode
+
   def fromString(mode: String): TracingMode = mode.toLowerCase match {
-    case "langfuse" => Langfuse
+    case "langfuse"          => Langfuse
     case "console" | "print" => Console
-    case "noop" | "none" => NoOp
-    case _ => NoOp
+    case "noop" | "none"     => NoOp
+    case _                   => NoOp
   }
 }
 
@@ -127,16 +131,17 @@ object TracingMode {
 object EnhancedTracing {
   def create(mode: TracingMode): EnhancedTracing = mode match {
     case TracingMode.Langfuse => new EnhancedLangfuseTracing()
-    case TracingMode.Console => new EnhancedConsoleTracing()
-    case TracingMode.NoOp => new EnhancedNoOpTracing()
+    case TracingMode.Console  => new EnhancedConsoleTracing()
+    case TracingMode.NoOp     => new EnhancedNoOpTracing()
   }
-  
+
   def create(): EnhancedTracing = {
-    val mode = sys.env.get("TRACING_MODE")
+    val mode = sys.env
+      .get("TRACING_MODE")
       .map(TracingMode.fromString)
       .getOrElse(TracingMode.Console)
     create(mode)
   }
-  
+
   def create(mode: String): EnhancedTracing = create(TracingMode.fromString(mode))
 }

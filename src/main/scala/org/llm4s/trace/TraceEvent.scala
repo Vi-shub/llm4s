@@ -1,6 +1,6 @@
 package org.llm4s.trace
 
-import org.llm4s.llmconnect.model.{TokenUsage, Completion}
+import org.llm4s.llmconnect.model.{ TokenUsage, Completion }
 import java.time.Instant
 
 /**
@@ -13,18 +13,18 @@ sealed trait TraceEvent {
 }
 
 object TraceEvent {
-  
+
   case class AgentInitialized(
-    query: String, 
+    query: String,
     tools: Vector[String],
     timestamp: Instant = Instant.now()
   ) extends TraceEvent {
     def eventType: String = "agent_initialized"
     def toJson: ujson.Value = ujson.Obj(
       "event_type" -> eventType,
-      "timestamp" -> timestamp.toString,
-      "query" -> query,
-      "tools" -> ujson.Arr(tools.map(ujson.Str(_)): _*)
+      "timestamp"  -> timestamp.toString,
+      "query"      -> query,
+      "tools"      -> ujson.Arr(tools.map(ujson.Str(_)): _*)
     )
   }
 
@@ -37,12 +37,12 @@ object TraceEvent {
   ) extends TraceEvent {
     def eventType: String = "completion_received"
     def toJson: ujson.Value = ujson.Obj(
-      "event_type" -> eventType,
-      "timestamp" -> timestamp.toString,
+      "event_type"    -> eventType,
+      "timestamp"     -> timestamp.toString,
       "completion_id" -> id,
-      "model" -> model,
-      "tool_calls" -> toolCalls,
-      "content" -> content
+      "model"         -> model,
+      "tool_calls"    -> toolCalls,
+      "content"       -> content
     )
   }
 
@@ -56,13 +56,13 @@ object TraceEvent {
   ) extends TraceEvent {
     def eventType: String = "tool_executed"
     def toJson: ujson.Value = ujson.Obj(
-      "event_type" -> eventType,
-      "timestamp" -> timestamp.toString,
-      "tool_name" -> name,
-      "input" -> input,
-      "output" -> output,
+      "event_type"  -> eventType,
+      "timestamp"   -> timestamp.toString,
+      "tool_name"   -> name,
+      "input"       -> input,
+      "output"      -> output,
       "duration_ms" -> duration,
-      "success" -> success
+      "success"     -> success
     )
   }
 
@@ -73,12 +73,12 @@ object TraceEvent {
   ) extends TraceEvent {
     def eventType: String = "error_occurred"
     def toJson: ujson.Value = ujson.Obj(
-      "event_type" -> eventType,
-      "timestamp" -> timestamp.toString,
-      "error_type" -> error.getClass.getSimpleName,
+      "event_type"    -> eventType,
+      "timestamp"     -> timestamp.toString,
+      "error_type"    -> error.getClass.getSimpleName,
       "error_message" -> error.getMessage,
-      "context" -> context,
-      "stack_trace" -> error.getStackTrace.take(5).mkString("\n")
+      "context"       -> context,
+      "stack_trace"   -> error.getStackTrace.take(5).mkString("\n")
     )
   }
 
@@ -90,13 +90,13 @@ object TraceEvent {
   ) extends TraceEvent {
     def eventType: String = "token_usage_recorded"
     def toJson: ujson.Value = ujson.Obj(
-      "event_type" -> eventType,
-      "timestamp" -> timestamp.toString,
-      "model" -> model,
-      "operation" -> operation,
-      "prompt_tokens" -> usage.promptTokens,
+      "event_type"        -> eventType,
+      "timestamp"         -> timestamp.toString,
+      "model"             -> model,
+      "operation"         -> operation,
+      "prompt_tokens"     -> usage.promptTokens,
       "completion_tokens" -> usage.completionTokens,
-      "total_tokens" -> usage.totalTokens
+      "total_tokens"      -> usage.totalTokens
     )
   }
 
@@ -108,11 +108,11 @@ object TraceEvent {
   ) extends TraceEvent {
     def eventType: String = "agent_state_updated"
     def toJson: ujson.Value = ujson.Obj(
-      "event_type" -> eventType,
-      "timestamp" -> timestamp.toString,
-      "status" -> status,
+      "event_type"    -> eventType,
+      "timestamp"     -> timestamp.toString,
+      "status"        -> status,
       "message_count" -> messageCount,
-      "log_count" -> logCount
+      "log_count"     -> logCount
     )
   }
 
@@ -124,9 +124,9 @@ object TraceEvent {
     def eventType: String = "custom_event"
     def toJson: ujson.Value = ujson.Obj(
       "event_type" -> eventType,
-      "timestamp" -> timestamp.toString,
-      "name" -> name,
-      "data" -> data
+      "timestamp"  -> timestamp.toString,
+      "name"       -> name,
+      "data"       -> data
     )
   }
 }

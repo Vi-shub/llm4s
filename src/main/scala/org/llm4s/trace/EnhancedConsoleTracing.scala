@@ -1,21 +1,14 @@
 package org.llm4s.trace
 
-import org.llm4s.agent.AgentState
-import org.llm4s.llmconnect.model.{TokenUsage, Completion}
 import org.llm4s.error.LLMError
-import org.slf4j.LoggerFactory
-
-import java.time.Instant
-import java.time.format.DateTimeFormatter
+import org.llm4s.agent.AgentState
+import org.llm4s.llmconnect.model.{ TokenUsage, Completion }
 import scala.util.Try
 
 /**
  * Enhanced console tracing with type-safe events and better formatting
  */
 class EnhancedConsoleTracing extends EnhancedTracing {
-  private val logger = LoggerFactory.getLogger(getClass)
-  private def timestamp: String = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
-
   // ANSI color codes for better readability
   private val RESET   = "\u001b[0m"
   private val BLUE    = "\u001b[34m"
@@ -27,11 +20,11 @@ class EnhancedConsoleTracing extends EnhancedTracing {
   private val GRAY    = "\u001b[90m"
   private val BOLD    = "\u001b[1m"
 
-  private def printHeader(title: String, color: String = CYAN): Unit = {
+  private def printHeader(title: String): Unit = {
     val separator = "=" * 60
-    println(s"$color$BOLD$separator$RESET")
-    println(s"$color$BOLD$title$RESET")
-    println(s"$color$BOLD$separator$RESET")
+    println(s"$CYAN$BOLD$separator$RESET")
+    println(s"$CYAN$BOLD$title$RESET")
+    println(s"$CYAN$BOLD$separator$RESET")
   }
 
   private def printSubHeader(title: String, color: String): Unit =
@@ -44,7 +37,7 @@ class EnhancedConsoleTracing extends EnhancedTracing {
       json
     }
 
-  def traceEvent(event: TraceEvent): Either[LLMError, Unit] = {
+  def traceEvent(event: TraceEvent): Either[LLMError, Unit] =
     Try {
       event match {
         case e: TraceEvent.AgentInitialized =>
@@ -57,7 +50,7 @@ class EnhancedConsoleTracing extends EnhancedTracing {
 
         case e: TraceEvent.CompletionReceived =>
           println()
-          printHeader("COMPLETION RECEIVED", GREEN)
+          printHeader("COMPLETION RECEIVED")
           println(s"${GRAY}Timestamp: ${e.timestamp}$RESET")
           println(s"${GREEN}Model: ${e.model}$RESET")
           println(s"${GREEN}ID: ${e.id}$RESET")
@@ -78,7 +71,7 @@ class EnhancedConsoleTracing extends EnhancedTracing {
 
         case e: TraceEvent.ErrorOccurred =>
           println()
-          printHeader("ERROR OCCURRED", RED)
+          printHeader("ERROR OCCURRED")
           println(s"${GRAY}Timestamp: ${e.timestamp}$RESET")
           println(s"${RED}Type: ${e.error.getClass.getSimpleName}$RESET")
           println(s"${RED}Message: ${e.error.getMessage}$RESET")
@@ -114,7 +107,6 @@ class EnhancedConsoleTracing extends EnhancedTracing {
           println()
       }
     }.toEither.left.map(error => LLMError.UnknownError(error.getMessage, error))
-  }
 
   def traceAgentState(state: AgentState): Either[LLMError, Unit] = {
     val event = TraceEvent.AgentStateUpdated(

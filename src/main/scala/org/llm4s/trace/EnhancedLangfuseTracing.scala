@@ -1,7 +1,7 @@
 package org.llm4s.trace
 
 import org.llm4s.agent.AgentState
-import org.llm4s.llmconnect.model.{TokenUsage, Completion}
+import org.llm4s.llmconnect.model.{ TokenUsage, Completion }
 import org.llm4s.error.LLMError
 import org.llm4s.config.EnvLoader
 import org.slf4j.LoggerFactory
@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.UUID
-import scala.util.{Failure, Success, Try}
 
 /**
  * Enhanced Langfuse tracing with type-safe events
@@ -22,10 +21,10 @@ class EnhancedLangfuseTracing(
   release: String = EnvLoader.getOrElse("LANGFUSE_RELEASE", "1.0.0"),
   version: String = EnvLoader.getOrElse("LANGFUSE_VERSION", "1.0.0")
 ) extends EnhancedTracing {
-  
-  private val logger = LoggerFactory.getLogger(getClass)
+
+  private val logger         = LoggerFactory.getLogger(getClass)
   private def nowIso: String = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
-  private def uuid: String = UUID.randomUUID().toString
+  private def uuid: String   = UUID.randomUUID().toString
 
   private def sendBatch(events: Seq[ujson.Obj]): Either[LLMError, Unit] = {
     if (publicKey.isEmpty || secretKey.isEmpty) {
@@ -75,8 +74,8 @@ class EnhancedLangfuseTracing(
   }
 
   def traceEvent(event: TraceEvent): Either[LLMError, Unit] = {
-    val traceId = uuid
-    val now = nowIso
+    val traceId     = uuid
+    val now         = nowIso
     val batchEvents = scala.collection.mutable.ArrayBuffer[ujson.Obj]()
 
     // Convert event to Langfuse format
@@ -188,8 +187,8 @@ class EnhancedLangfuseTracing(
               "total_tokens"      -> e.usage.totalTokens
             ),
             "metadata" -> ujson.Obj(
-              "model"     -> e.model,
-              "operation" -> e.operation,
+              "model"      -> e.model,
+              "operation"  -> e.operation,
               "token_type" -> "usage"
             )
           )
@@ -214,17 +213,17 @@ class EnhancedLangfuseTracing(
               "log_count"     -> e.logCount
             ),
             "output" -> ujson.Obj(
-              "status" -> e.status,
+              "status"   -> e.status,
               "messages" -> e.messageCount,
-              "logs" -> e.logCount
+              "logs"     -> e.logCount
             ),
-            "userId"      -> "llm4s-user",
-            "sessionId"   -> s"session-${System.currentTimeMillis()}",
+            "userId"    -> "llm4s-user",
+            "sessionId" -> s"session-${System.currentTimeMillis()}",
             "metadata" -> ujson.Obj(
-              "framework" -> "llm4s",
-              "status" -> e.status,
+              "framework"     -> "llm4s",
+              "status"        -> e.status,
               "message_count" -> e.messageCount,
-              "log_count" -> e.logCount
+              "log_count"     -> e.logCount
             ),
             "tags" -> ujson.Arr("llm4s", "agent", "state-update")
           )
@@ -255,13 +254,14 @@ class EnhancedLangfuseTracing(
     // Send hierarchical structure: one main trace with child spans for each message
     if (state.conversation.messages.nonEmpty) {
       val batchEvents = scala.collection.mutable.ArrayBuffer[ujson.Obj]()
-      val traceId = uuid
-      val sessionId = s"session-${System.currentTimeMillis()}"
-      
+      val traceId     = uuid
+      val sessionId   = s"session-${System.currentTimeMillis()}"
+
       // Get the first user message and last assistant message for main trace input/output
       val firstUserMessage = state.conversation.messages.find(_.isInstanceOf[org.llm4s.llmconnect.model.UserMessage])
-      val lastAssistantMessage = state.conversation.messages.findLast(_.isInstanceOf[org.llm4s.llmconnect.model.AssistantMessage])
-      
+      val lastAssistantMessage =
+        state.conversation.messages.findLast(_.isInstanceOf[org.llm4s.llmconnect.model.AssistantMessage])
+
       // 1. Create the main trace with exact input/output like old system
       val mainTrace = ujson.Obj(
         "id"        -> traceId,
@@ -280,62 +280,62 @@ class EnhancedLangfuseTracing(
           "userId"      -> "llm4s-user",
           "sessionId"   -> sessionId,
           "metadata" -> ujson.Obj(
-            "framework" -> "llm4s",
-            "status" -> state.status.toString,
+            "framework"     -> "llm4s",
+            "status"        -> state.status.toString,
             "message_count" -> state.conversation.messages.length,
-            "log_count" -> state.logs.length
+            "log_count"     -> state.logs.length
           ),
           "tags" -> ujson.Arr("llm4s", "agent", "conversation")
         )
       )
       batchEvents += mainTrace
-      
+
       // 2. Create child spans for each message
       state.conversation.messages.zipWithIndex.foreach { case (message, index) =>
         val messageName = message match {
-          case _: org.llm4s.llmconnect.model.SystemMessage => "System Message"
-          case _: org.llm4s.llmconnect.model.UserMessage => "User Input"
+          case _: org.llm4s.llmconnect.model.SystemMessage    => "System Message"
+          case _: org.llm4s.llmconnect.model.UserMessage      => "User Input"
           case _: org.llm4s.llmconnect.model.AssistantMessage => "LLM Generation"
-          case _ => message.getClass.getSimpleName
+          case _                                              => message.getClass.getSimpleName
         }
-        
+
         val childSpan = ujson.Obj(
           "id"        -> uuid,
           "timestamp" -> nowIso,
           "type"      -> "span-create",
           "body" -> ujson.Obj(
-            "id"          -> uuid,
-            "timestamp"   -> nowIso,
-            "traceId"     -> traceId,
-            "name"        -> s"$messageName $index",
+            "id"        -> uuid,
+            "timestamp" -> nowIso,
+            "traceId"   -> traceId,
+            "name"      -> s"$messageName $index",
             "input" -> ujson.Obj(
               "content" -> message.content,
               "role"    -> message.getClass.getSimpleName.replace("Message", "").toLowerCase
             ),
             "output" -> (message match {
-              case _: org.llm4s.llmconnect.model.AssistantMessage => 
+              case _: org.llm4s.llmconnect.model.AssistantMessage =>
                 ujson.Obj(
                   "content" -> message.content,
                   "role"    -> "assistant"
                 )
-              case _ => 
+              case _ =>
                 ujson.Null
             }),
             "metadata" -> ujson.Obj(
-              "framework" -> "llm4s",
+              "framework"     -> "llm4s",
               "message_index" -> index,
-              "message_type" -> message.getClass.getSimpleName,
-              "parent_trace" -> traceId
+              "message_type"  -> message.getClass.getSimpleName,
+              "parent_trace"  -> traceId
             ),
             "tags" -> ujson.Arr("llm4s", "agent", "conversation", "message")
           )
         )
         batchEvents += childSpan
       }
-      
+
       sendBatch(batchEvents.toSeq)
     }
-    
+
     Right(())
   }
 
