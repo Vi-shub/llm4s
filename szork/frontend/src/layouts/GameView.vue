@@ -757,14 +757,32 @@ export default defineComponent({
       setTimeout(checkMusic, 1000);
     };
 
-    const playBackgroundMusic = (musicBase64: string, mood: string) => {
-      log(`Playing background music, mood: ${mood}, enabled: ${backgroundMusicEnabled.value}`);
+    const playBackgroundMusic = (musicBase64: string, mood: string, forceNew: boolean = false) => {
+      log(`Playing background music, mood: ${mood}, enabled: ${backgroundMusicEnabled.value}, forceNew: ${forceNew}`);
       
       // Store the music data for potential resume
       lastMusicData.value = { base64: musicBase64, mood: mood };
       
       if (!backgroundMusicEnabled.value) {
         log("Background music is disabled, storing for later");
+        return;
+      }
+      
+      // If we're not forcing new music and we have current music that's just paused, resume it
+      if (!forceNew && currentBackgroundMusic.value && currentBackgroundMusic.value.paused && currentMusicMood.value === mood) {
+        log("Resuming existing paused music instead of creating new");
+        currentBackgroundMusic.value.volume = 0;
+        currentBackgroundMusic.value.play().then(() => {
+          const fadeInInterval = setInterval(() => {
+            if (currentBackgroundMusic.value && currentBackgroundMusic.value.volume < backgroundMusicVolume.value) {
+              currentBackgroundMusic.value.volume = Math.min(backgroundMusicVolume.value, currentBackgroundMusic.value.volume + 0.02);
+            } else {
+              clearInterval(fadeInInterval);
+            }
+          }, 50);
+        }).catch(error => {
+          log("Error resuming music:", error);
+        });
         return;
       }
       
@@ -844,10 +862,10 @@ export default defineComponent({
 
     // Watch for background music enabled changes
     watch(backgroundMusicEnabled, (enabled) => {
-      if (!enabled && currentBackgroundMusic.value) {
+      if (!enabled) {
         log("Disabling background music");
-        // Pause music but keep the reference
-        if (currentBackgroundMusic.value) {
+        // Stop music completely
+        if (currentBackgroundMusic.value && !currentBackgroundMusic.value.paused) {
           // Fade out for smoother experience
           const musicToStop = currentBackgroundMusic.value;
           const fadeOutInterval = setInterval(() => {
@@ -856,7 +874,7 @@ export default defineComponent({
             } else {
               clearInterval(fadeOutInterval);
               musicToStop.pause();
-              log("Background music paused");
+              log("Background music stopped");
             }
           }, 20);
         }
@@ -878,11 +896,9 @@ export default defineComponent({
           }).catch(error => {
             log("Error resuming background music:", error);
           });
-        } else if (lastMusicData.value) {
-          // If no current music but we have last music data, play it
-          log("Playing last known background music");
-          playBackgroundMusic(lastMusicData.value.base64, lastMusicData.value.mood);
         }
+        // Note: We don't automatically play lastMusicData when re-enabling
+        // Music will start when the next scene triggers it
       }
     });
 

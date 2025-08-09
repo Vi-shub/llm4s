@@ -11,11 +11,11 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
   
   private val themeDescription = theme.getOrElse("classic fantasy dungeon adventure")
   private val artStyleDescription = artStyle match {
-    case Some("pixel") => "pixel art style, 16-bit retro game aesthetic"
-    case Some("illustration") => "professional pencil drawing, detailed graphite art, realistic shading, fine pencil strokes"
-    case Some("painting") => "fully rendered painting style with realistic lighting and textures"
-    case Some("comic") => "comic book style with bold lines and cel-shaded coloring"
-    case _ => "fantasy art style"
+    case Some("pixel") => "pixel art style, 16-bit retro video game aesthetic, blocky pixels, limited color palette, nostalgic 8-bit/16-bit graphics"
+    case Some("illustration") => "professional pencil drawing style, detailed graphite art, realistic shading, fine pencil strokes, sketch-like illustration"
+    case Some("painting") => "oil painting style, fully rendered painting with realistic lighting and textures, painterly brushstrokes, fine art aesthetic"
+    case Some("comic") => "comic book art style with bold lines, cel-shaded coloring, graphic novel aesthetic, dynamic comic book illustration"
+    case _ => "fantasy art style, detailed digital illustration"
   }
   
   private val gamePrompt =
@@ -31,7 +31,7 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
       |  "locationId": "unique_location_id",  // e.g., "dungeon_entrance", "forest_path_1"
       |  "locationName": "Human Readable Name",  // e.g., "Dungeon Entrance", "Forest Path"
       |  "narrationText": "Brief 2-3 sentence description for the player",
-      |  "imageDescription": "Detailed 2-3 sentence visual description for image generation. Include colors, lighting, atmosphere, architectural details, and visual elements.",
+      |  "imageDescription": "Detailed 2-3 sentence visual description for image generation in $artStyleDescription. Include colors, lighting, atmosphere, architectural details, and visual elements appropriate for the art style.",
       |  "musicDescription": "Detailed atmospheric description for music generation. Include mood, tempo, instruments, and emotional tone.",
       |  "musicMood": "One of: entrance, exploration, combat, victory, dungeon, forest, town, mystery, castle, underwater, temple, boss, stealth, treasure, danger, peaceful",
       |  "exits": [
@@ -44,7 +44,8 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
       |
       |Rules:
       |- Keep narrationText under 50 words
-      |- ImageDescription should be rich and detailed (50-100 words) focusing on visual elements
+      |- ImageDescription should be rich and detailed (50-100 words) focusing on visual elements in the $artStyleDescription
+      |- IMPORTANT: Always describe scenes specifically for the art style: $artStyleDescription
       |- MusicDescription should evoke the atmosphere and mood (30-50 words)
       |- Always provide consistent locationIds for navigation
       |- Track player location, inventory, and game state
@@ -233,13 +234,20 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
         return None
     }
     
-    // Include art style in the image prompt
-    val styledPrompt = s"$imagePrompt, rendered in $artStyleDescription"
+    // Include art style prominently in the image prompt
+    val styledPrompt = artStyle match {
+      case Some("pixel") => s"Pixel art style image: $imagePrompt. Create in 16-bit pixel art style with blocky pixels and limited color palette."
+      case Some("illustration") => s"Pencil sketch illustration: $imagePrompt. Create as a detailed pencil drawing with graphite shading."
+      case Some("painting") => s"Oil painting: $imagePrompt. Create as a traditional oil painting with visible brushstrokes."
+      case Some("comic") => s"Comic book art: $imagePrompt. Create in comic book style with bold outlines and cel shading."
+      case _ => s"$imagePrompt, rendered in $artStyleDescription"
+    }
     logger.info(s"[$sessionId] Generating scene image with prompt: ${styledPrompt.take(100)}...")
     val imageGen = ImageGeneration()
     
-    // Use cached version if available
-    imageGen.generateSceneWithCache(styledPrompt, "", gameId, locationId) match {
+    // Use cached version if available - pass art style for cache matching
+    val artStyleForCache = artStyle.getOrElse("fantasy")
+    imageGen.generateSceneWithCache(styledPrompt, artStyleForCache, gameId, locationId) match {
       case Right(image) =>
         logger.info(s"[$sessionId] Scene image generated/retrieved, base64: ${image.length}")
         Some(image)
