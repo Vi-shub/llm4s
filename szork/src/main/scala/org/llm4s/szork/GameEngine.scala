@@ -65,6 +65,8 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
   private var currentState: AgentState = _
   private var currentScene: Option[GameScene] = None
   private var visitedLocations: Set[String] = Set.empty
+  private var conversationHistory: List[ConversationEntry] = List.empty
+  private val createdAt: Long = System.currentTimeMillis()
   
   def initialize(): String = {
     logger.info(s"[$sessionId] Initializing game with theme: $themeDescription")
@@ -89,6 +91,8 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
             currentScene = Some(scene)
             visitedLocations += scene.locationId
             logger.info(s"[$sessionId] Game initialized with scene: ${scene.locationId} - ${scene.locationName}")
+            // Track initial conversation
+            trackConversation("assistant", scene.narrationText)
             scene.narrationText
           case None =>
             logger.warn(s"[$sessionId] Failed to parse structured response, using raw text")
@@ -112,6 +116,9 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
   
   def processCommand(command: String, generateAudio: Boolean = true): Either[LLMError, GameResponse] = {
     logger.debug(s"[$sessionId] Processing command: $command")
+    
+    // Track user command in conversation history
+    trackConversation("user", command)
     
     // Track message count before adding user message
     val previousMessageCount = currentState.conversation.messages.length
@@ -163,6 +170,9 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
           logger.info(s"[$sessionId] Skipping audio (generateAudio=$generateAudio, empty=${responseText.isEmpty})")
           None
         }
+        
+        // Track assistant response in conversation history
+        trackConversation("assistant", responseText)
         
         // Image generation is now handled asynchronously in the server
         // Background music generation is also handled asynchronously
@@ -353,6 +363,65 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
   }
   
   def getCurrentScene: Option[GameScene] = currentScene
+  
+  // State extraction for persistence
+  def getGameState(gameId: String, gameTheme: Option[GameTheme], gameArtStyle: Option[ArtStyle]): GameState = {
+    GameState(
+      gameId = gameId,
+      theme = gameTheme,
+      artStyle = gameArtStyle,
+      currentScene = currentScene,
+      visitedLocations = visitedLocations,
+      conversationHistory = conversationHistory,
+      createdAt = createdAt,
+      lastSaved = System.currentTimeMillis()
+    )
+  }
+  
+  // Restore game from saved state
+  def restoreGameState(state: GameState): Unit = {
+    currentScene = state.currentScene
+    visitedLocations = state.visitedLocations
+    conversationHistory = state.conversationHistory
+    
+    // Reconstruct conversation for the agent
+    // We'll create a simplified conversation with just the essential messages
+    val messages = state.conversationHistory.flatMap { entry =>
+      entry.role match {
+        case "user" => Some(UserMessage(content = entry.content))
+        case "assistant" => Some(AssistantMessage(content = entry.content))
+        case _ => None
+      }
+    }
+    
+    // Initialize the agent with the restored conversation
+    if (messages.nonEmpty) {
+      currentState = agent.initialize(
+        messages.head.content,
+        toolRegistry,
+        systemPromptAddition = Some(gamePrompt)
+      )
+      
+      // Add the rest of the messages to restore conversation context
+      messages.tail.foreach { msg =>
+        currentState = currentState.addMessage(msg)
+      }
+    } else {
+      // If no conversation history, initialize normally
+      initialize()
+    }
+    
+    logger.info(s"[$sessionId] Game state restored with ${conversationHistory.size} conversation entries")
+  }
+  
+  // Add conversation tracking to processCommand
+  private def trackConversation(role: String, content: String): Unit = {
+    conversationHistory = conversationHistory :+ ConversationEntry(
+      role = role,
+      content = content,
+      timestamp = System.currentTimeMillis()
+    )
+  }
 }
 
 object GameEngine {

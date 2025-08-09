@@ -34,6 +34,18 @@
               <v-col cols="auto">
                 <div class="audio-controls">
                   <v-btn
+                    @click="saveGame"
+                    color="success"
+                    variant="outlined"
+                    icon
+                    size="small"
+                    title="Save Game"
+                    class="mr-2"
+                    v-if="currentGameId"
+                  >
+                    <v-icon>mdi-content-save</v-icon>
+                  </v-btn>
+                  <v-btn
                     @click="backgroundMusicEnabled = !backgroundMusicEnabled"
                     :color="backgroundMusicEnabled ? 'primary' : 'grey'"
                     :variant="backgroundMusicEnabled ? 'flat' : 'outlined'"
@@ -150,6 +162,7 @@
 
 <script lang="ts">
 import { defineComponent, ref, nextTick, onMounted, watch } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import axios from "axios";
 import AdventureSetup from "@/components/AdventureSetup.vue";
 
@@ -180,11 +193,20 @@ export default defineComponent({
   components: {
     AdventureSetup
   },
-  setup() {
+  props: {
+    gameId: {
+      type: String,
+      default: null
+    }
+  },
+  setup(props) {
+    const router = useRouter();
+    const route = useRoute();
     const messages = ref<GameMessage[]>([]);
     const userInput = ref("");
     const gameOutput = ref<HTMLElement>();
     const sessionId = ref<string | null>(null);
+    const currentGameId = ref<string | null>(props.gameId || route.params.gameId as string || null);
     const loading = ref(false);
     const recording = ref(false);
     const mediaRecorder = ref<MediaRecorder | null>(null);
@@ -229,6 +251,63 @@ export default defineComponent({
       });
     };
 
+    const loadGame = async (gameId: string) => {
+      try {
+        loading.value = true;
+        log(`Loading game: ${gameId}`);
+        
+        const response = await axios.get(`/api/game/load/${gameId}`);
+        
+        if (response.data.status === "success") {
+          sessionId.value = response.data.sessionId;
+          currentGameId.value = response.data.gameId;
+          
+          // Clear existing messages
+          messages.value = [];
+          
+          // Restore conversation history
+          if (response.data.conversationHistory && response.data.conversationHistory.length > 0) {
+            response.data.conversationHistory.forEach((entry: any) => {
+              messages.value.push({
+                text: entry.content,
+                type: entry.role === "user" ? "user" : "game",
+                messageIndex: messages.value.length
+              });
+            });
+            log(`Restored ${response.data.conversationHistory.length} conversation entries`);
+          }
+          
+          // Show current scene info
+          if (response.data.scene) {
+            const scene = response.data.scene;
+            log(`Loaded game at scene: ${scene.locationName}`);
+          }
+          
+          gameStarted.value = true;
+          loading.value = false;
+          
+          // Scroll to bottom after loading
+          await nextTick();
+          await scrollToBottom();
+          
+          // Update URL if not already there
+          if (!route.params.gameId || route.params.gameId !== gameId) {
+            router.push(`/game/${gameId}`);
+          }
+        } else {
+          log(`Failed to load game: ${response.data.error}`);
+          // Show setup screen if load fails
+          loading.value = false;
+          setupStarted.value = true;
+        }
+      } catch (error) {
+        log("Error loading game:", error);
+        // Show setup screen if load fails
+        loading.value = false;
+        setupStarted.value = true;
+      }
+    };
+    
     const startGame = async () => {
       try {
         loading.value = true;
@@ -239,6 +318,10 @@ export default defineComponent({
         });
         log("Game start response:", response.data);
         sessionId.value = response.data.sessionId;
+        currentGameId.value = response.data.gameId;
+        
+        // Update URL to include game ID
+        router.push(`/game/${response.data.gameId}`);
         const initialMessage: GameMessage = {
           text: response.data.message,
           type: "game",
@@ -425,9 +508,19 @@ export default defineComponent({
     const sendAudioCommand = async (audioBlob: Blob) => {
       if (!sessionId.value) return;
 
+      // Check if audio clip has content
+      log("Audio blob size:", audioBlob.size, "bytes");
+      if (audioBlob.size === 0) {
+        messages.value.push({
+          text: "Please hold the record button to record audio",
+          type: "system",
+        });
+        return;
+      }
+
       // Show user feedback
       messages.value.push({
-        text: "> [Audio input]",
+        text: "> [Audio input - processing...]",
         type: "user",
       });
 
@@ -459,6 +552,9 @@ export default defineComponent({
             const lastUserMsg = messages.value[messages.value.length - 1];
             if (lastUserMsg.type === "user") {
               lastUserMsg.text = `> ${response.data.transcription}`;
+              // Log the transcription for debugging
+              log(`[${sessionId.value || 'no-session'}] Transcription result: "${response.data.transcription}"`);
+              console.log(`🎤 Voice transcription: "${response.data.transcription}"`);
             }
           }
           
@@ -761,8 +857,45 @@ export default defineComponent({
       }
     });
 
+    const saveGame = async () => {
+      if (!sessionId.value) {
+        log("No session to save");
+        return;
+      }
+      
+      try {
+        const response = await axios.post(`/api/game/save/${sessionId.value}`, {});
+        if (response.data.status === "success") {
+          messages.value.push({
+            text: "Game saved successfully!",
+            type: "system"
+          });
+          log(`Game saved: ${response.data.gameId}`);
+        } else {
+          messages.value.push({
+            text: `Failed to save game: ${response.data.error}`,
+            type: "system"
+          });
+        }
+      } catch (error) {
+        log("Error saving game:", error);
+        messages.value.push({
+          text: "Error saving game",
+          type: "system"
+        });
+      }
+    };
+
     onMounted(() => {
-      // Game now starts when user clicks "Begin Your Adventure"
+      // Check if there's a game ID in the URL
+      const gameIdFromRoute = route.params.gameId as string;
+      if (gameIdFromRoute) {
+        log(`Found game ID in URL: ${gameIdFromRoute}`);
+        loadGame(gameIdFromRoute);
+      } else {
+        // No game ID, show setup screen
+        log("No game ID in URL, showing setup screen");
+      }
     });
 
     return {
@@ -785,6 +918,9 @@ export default defineComponent({
       backgroundMusicVolume,
       currentMusicMood,
       pollForMusic,
+      loadGame,
+      saveGame,
+      currentGameId,
     };
   },
 });

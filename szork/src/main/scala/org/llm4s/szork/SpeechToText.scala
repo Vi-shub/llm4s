@@ -47,6 +47,12 @@ class SpeechToText {
   }
   
   def transcribeBytes(audioBytes: Array[Byte], filename: String = "audio.webm"): Either[String, String] = {
+    // Check if audio is empty
+    if (audioBytes.isEmpty) {
+      logger.warn("Received empty audio data")
+      return Left("No audio data received. Please hold the record button to record audio.")
+    }
+    
     // Create temp file with proper extension
     val extension = if (filename.contains(".")) filename.substring(filename.lastIndexOf(".")) else ".webm"
     val tempFile = Files.createTempFile("szork_audio_", extension)

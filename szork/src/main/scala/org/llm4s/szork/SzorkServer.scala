@@ -9,11 +9,13 @@ import java.util.concurrent.Executors
 
 case class GameSession(
   id: String,
+  gameId: String,  // Unique game ID for persistence
   engine: GameEngine,
   theme: Option[GameTheme] = None,
   artStyle: Option[ArtStyle] = None,
   pendingImages: mutable.Map[Int, Option[String]] = mutable.Map.empty,
-  pendingMusic: mutable.Map[Int, Option[(String, String)]] = mutable.Map.empty  // (base64, mood)
+  pendingMusic: mutable.Map[Int, Option[(String, String)]] = mutable.Map.empty,  // (base64, mood)
+  autoSaveEnabled: Boolean = true
 )
 
 case class GameTheme(
@@ -140,6 +142,7 @@ object SzorkServer extends cask.Main with cask.Routes {
   def startGame(request: Request) = {
     logger.info("Starting new game session")
     val sessionId = java.util.UUID.randomUUID().toString
+    val gameId = java.util.UUID.randomUUID().toString  // Unique game ID for persistence
     
     // Parse theme and art style from request
     val json = ujson.read(request.text())
@@ -164,6 +167,7 @@ object SzorkServer extends cask.Main with cask.Routes {
     
     val session = GameSession(
       id = sessionId,
+      gameId = gameId,
       engine = engine,
       theme = theme,
       artStyle = artStyle
@@ -175,6 +179,7 @@ object SzorkServer extends cask.Main with cask.Routes {
     val messageIndex = engine.getMessageCount - 1
     val result = ujson.Obj(
       "sessionId" -> sessionId,
+      "gameId" -> gameId,  // Include game ID for frontend routing
       "message" -> initialMessage,
       "status" -> "started",
       "messageIndex" -> messageIndex
@@ -314,6 +319,17 @@ object SzorkServer extends cask.Main with cask.Routes {
               result("hasMusic") = false
             }
             
+            // Auto-save if enabled
+            if (session.autoSaveEnabled) {
+              val gameState = session.engine.getGameState(session.gameId, session.theme, session.artStyle)
+              GamePersistence.saveGame(gameState) match {
+                case Right(_) =>
+                  logger.debug(s"Auto-saved game ${session.gameId}")
+                case Left(error) =>
+                  logger.warn(s"Auto-save failed for game ${session.gameId}: $error")
+              }
+            }
+            
             result
             
           case Left(error) =>
@@ -353,7 +369,9 @@ object SzorkServer extends cask.Main with cask.Routes {
       val speechToText = SpeechToText()
       speechToText.transcribeBytes(audioBytes) match {
         case Right(transcribedText) =>
-          logger.info(s"Transcribed text: $transcribedText")
+          logger.info(s"========================================")
+          logger.info(s"🎤 VOICE TRANSCRIPTION RESULT: \"$transcribedText\"")
+          logger.info(s"========================================")
           
           // Process the transcribed text as a regular command
           sessions.get(sessionId) match {
@@ -418,6 +436,17 @@ object SzorkServer extends cask.Main with cask.Routes {
                     }(imageEC)
                   } else {
                     result("hasMusic") = false
+                  }
+                  
+                  // Auto-save if enabled
+                  if (session.autoSaveEnabled) {
+                    val gameState = session.engine.getGameState(session.gameId, session.theme, session.artStyle)
+                    GamePersistence.saveGame(gameState) match {
+                      case Right(_) =>
+                        logger.debug(s"Auto-saved game ${session.gameId} after audio command")
+                      case Left(error) =>
+                        logger.warn(s"Auto-save failed for game ${session.gameId}: $error")
+                    }
                   }
                   
                   result
@@ -587,6 +616,112 @@ object SzorkServer extends cask.Main with cask.Routes {
 
   
   def allRoutes = Seq(this)
+  
+  @post("/api/game/save/:sessionId")
+  def saveGame(sessionId: String) = {
+    logger.info(s"Saving game for session: $sessionId")
+    
+    sessions.get(sessionId) match {
+      case Some(session) =>
+        val gameState = session.engine.getGameState(session.gameId, session.theme, session.artStyle)
+        GamePersistence.saveGame(gameState) match {
+          case Right(_) =>
+            logger.info(s"Game saved successfully: ${session.gameId}")
+            ujson.Obj(
+              "status" -> "success",
+              "gameId" -> session.gameId
+            )
+          case Left(error) =>
+            logger.error(s"Failed to save game: $error")
+            ujson.Obj(
+              "status" -> "error",
+              "error" -> error
+            )
+        }
+      case None =>
+        logger.warn(s"Session not found for save: $sessionId")
+        ujson.Obj(
+          "status" -> "error",
+          "error" -> "Session not found"
+        )
+    }
+  }
+  
+  @get("/api/game/load/:gameId")
+  def loadGame(gameId: String) = {
+    logger.info(s"Loading game: $gameId")
+    
+    GamePersistence.loadGame(gameId) match {
+      case Right(gameState) =>
+        // Create new session for loaded game
+        val sessionId = java.util.UUID.randomUUID().toString
+        val engine = GameEngine.create(sessionId, gameState.theme.map(_.prompt), gameState.artStyle.map(_.id))
+        
+        // Restore the game state
+        engine.restoreGameState(gameState)
+        
+        val session = GameSession(
+          id = sessionId,
+          gameId = gameId,
+          engine = engine,
+          theme = gameState.theme,
+          artStyle = gameState.artStyle
+        )
+        
+        sessions(sessionId) = session
+        logger.info(s"Game loaded successfully: $gameId -> session $sessionId")
+        
+        ujson.Obj(
+          "status" -> "success",
+          "sessionId" -> sessionId,
+          "gameId" -> gameId,
+          "scene" -> gameState.currentScene.map { scene =>
+            ujson.Obj(
+              "locationName" -> scene.locationName,
+              "narrationText" -> scene.narrationText,
+              "exits" -> scene.exits.map(exit => ujson.Obj(
+                "direction" -> exit.direction,
+                "description" -> ujson.Str(exit.description.getOrElse(""))
+              )),
+              "items" -> scene.items,
+              "npcs" -> scene.npcs
+            )
+          }.getOrElse(ujson.Null),
+          "conversationHistory" -> gameState.conversationHistory.map { entry =>
+            ujson.Obj(
+              "role" -> entry.role,
+              "content" -> entry.content,
+              "timestamp" -> entry.timestamp
+            )
+          }
+        )
+      case Left(error) =>
+        logger.error(s"Failed to load game: $error")
+        ujson.Obj(
+          "status" -> "error",
+          "error" -> error
+        )
+    }
+  }
+  
+  @get("/api/game/list")
+  def listGames() = {
+    logger.info("Listing saved games")
+    
+    val games = GamePersistence.listGames()
+    ujson.Obj(
+      "status" -> "success",
+      "games" -> games.map { game =>
+        ujson.Obj(
+          "gameId" -> game.gameId,
+          "theme" -> game.theme,
+          "artStyle" -> game.artStyle,
+          "createdAt" -> game.createdAt,
+          "lastSaved" -> game.lastSaved
+        )
+      }
+    )
+  }
   
   // Initialize routes
   initialize()

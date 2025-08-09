@@ -4,8 +4,14 @@ import GameView from "@/layouts/GameView.vue";
 const routes = [
   {
     path: "/",
+    name: "Home",
+    component: GameView,
+  },
+  {
+    path: "/game/:gameId",
     name: "Game",
     component: GameView,
+    props: true,
   },
 ];
 
