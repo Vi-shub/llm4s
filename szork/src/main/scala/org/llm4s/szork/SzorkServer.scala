@@ -10,14 +10,116 @@ import java.util.concurrent.Executors
 case class GameSession(
   id: String,
   engine: GameEngine,
+  theme: Option[GameTheme] = None,
+  artStyle: Option[ArtStyle] = None,
   pendingImages: mutable.Map[Int, Option[String]] = mutable.Map.empty,
   pendingMusic: mutable.Map[Int, Option[(String, String)]] = mutable.Map.empty  // (base64, mood)
+)
+
+case class GameTheme(
+  id: String,
+  name: String,
+  prompt: String
+)
+
+case class ArtStyle(
+  id: String,
+  name: String
 )
 
 case class CommandRequest(command: String)
 case class CommandResponse(response: String, sessionId: String)
 
 object SzorkServer extends cask.Main with cask.Routes {
+  
+  @post("/api/game/validate-theme")
+  def validateTheme(request: Request) = {
+    val json = ujson.read(request.text())
+    val themeDescription = json("theme").str
+    
+    logger.info(s"Validating custom theme: ${themeDescription.take(100)}...")
+    
+    // Use LLM to validate and enhance the theme
+    import org.llm4s.llmconnect.LLM
+    import org.llm4s.llmconnect.model.{SystemMessage, UserMessage, Conversation}
+    
+    val client = LLM.client()
+    val validationPrompt = s"""Analyze this adventure game theme idea and determine if it would work well for a text-based adventure game:
+    |
+    |Theme: $themeDescription
+    |
+    |Please respond with a JSON object:
+    |{
+    |  "valid": true/false,
+    |  "message": "Brief explanation if not valid",
+    |  "enhancedTheme": "Enhanced version of the theme if valid, focusing on adventure elements"
+    |}
+    |
+    |A good theme should have:
+    |- Clear setting and atmosphere
+    |- Potential for exploration and discovery
+    |- Opportunities for puzzles, challenges, or mysteries
+    |- Interesting locations to visit
+    |""".stripMargin
+    
+    try {
+      val conversation = Conversation(
+        Seq(
+          SystemMessage("You are an expert game designer specializing in text adventure games. Evaluate theme ideas and enhance them."),
+          UserMessage(validationPrompt)
+        )
+      )
+      
+      client.complete(conversation) match {
+        case Right(response) =>
+          val responseText = response.message.content
+          // Try to parse JSON from response
+          val jsonStart = responseText.indexOf('{')
+          val jsonEnd = responseText.lastIndexOf('}')
+          if (jsonStart >= 0 && jsonEnd > jsonStart) {
+            val jsonStr = responseText.substring(jsonStart, jsonEnd + 1)
+            try {
+              val parsed = ujson.read(jsonStr)
+              ujson.Obj(
+                "valid" -> parsed("valid"),
+                "message" -> parsed.obj.getOrElse("message", ujson.Str("")).str,
+                "enhancedTheme" -> parsed.obj.getOrElse("enhancedTheme", ujson.Str(themeDescription)).str
+              )
+            } catch {
+              case _: Exception =>
+                // If parsing fails, assume it's valid
+                ujson.Obj(
+                  "valid" -> true,
+                  "message" -> "",
+                  "enhancedTheme" -> themeDescription
+                )
+            }
+          } else {
+            // Default to valid if no JSON found
+            ujson.Obj(
+              "valid" -> true,
+              "message" -> "",
+              "enhancedTheme" -> themeDescription
+            )
+          }
+        case Left(error) =>
+          logger.error(s"Failed to validate theme: $error")
+          ujson.Obj(
+            "valid" -> true,
+            "message" -> "",
+            "enhancedTheme" -> themeDescription
+          )
+      }
+    } catch {
+      case e: Exception =>
+        logger.error(s"Error validating theme", e)
+        ujson.Obj(
+          "valid" -> true,
+          "message" -> "",
+          "enhancedTheme" -> themeDescription
+        )
+    }
+  }
   
   private val logger = LoggerFactory.getLogger("SzorkServer")
   private val sessions = mutable.Map[String, GameSession]()
@@ -35,16 +137,36 @@ object SzorkServer extends cask.Main with cask.Routes {
   }
 
   @post("/api/game/start")
-  def startGame() = {
+  def startGame(request: Request) = {
     logger.info("Starting new game session")
     val sessionId = java.util.UUID.randomUUID().toString
     
-    val engine = GameEngine.create(sessionId)
+    // Parse theme and art style from request
+    val json = ujson.read(request.text())
+    val theme = json.obj.get("theme").map { t =>
+      GameTheme(
+        id = t("id").str,
+        name = t("name").str,
+        prompt = t("prompt").str
+      )
+    }
+    val artStyle = json.obj.get("artStyle").map { s =>
+      ArtStyle(
+        id = s("id").str,
+        name = s("name").str
+      )
+    }
+    
+    logger.info(s"Starting game with theme: ${theme.map(_.name).getOrElse("default")}, style: ${artStyle.map(_.name).getOrElse("default")}")
+    
+    val engine = GameEngine.create(sessionId, theme.map(_.prompt), artStyle.map(_.id))
     val initialMessage = engine.initialize()
     
     val session = GameSession(
       id = sessionId,
-      engine = engine
+      engine = engine,
+      theme = theme,
+      artStyle = artStyle
     )
     
     sessions(sessionId) = session
@@ -58,10 +180,39 @@ object SzorkServer extends cask.Main with cask.Routes {
       "messageIndex" -> messageIndex
     )
     
+    // Add scene data if available (without revealing location IDs)
+    engine.getCurrentScene.foreach { scene =>
+      result("scene") = ujson.Obj(
+        "locationName" -> scene.locationName,
+        "exits" -> scene.exits.map(exit => ujson.Obj(
+          "direction" -> exit.direction,
+          "description" -> ujson.Str(exit.description.getOrElse(""))
+        )),
+        "items" -> scene.items,
+        "npcs" -> scene.npcs
+      )
+    }
+    
+    // Generate audio for the initial message
+    try {
+      val audioStartTime = System.currentTimeMillis()
+      logger.info(s"[$sessionId] Generating audio for initial scene (${initialMessage.length} chars)")
+      val tts = TextToSpeech()
+      tts.synthesizeToBase64(initialMessage, TextToSpeech.VOICE_NOVA) match {
+        case Right(audio) => 
+          val audioTime = System.currentTimeMillis() - audioStartTime
+          logger.info(s"[$sessionId] Initial audio generated in ${audioTime}ms, base64: ${audio.length}")
+          result("audio") = audio
+        case Left(error) => 
+          logger.error(s"[$sessionId] Failed to generate initial audio: $error")
+      }
+    } catch {
+      case e: Exception =>
+        logger.error(s"[$sessionId] Error generating initial audio", e)
+    }
+    
     // Check if the initial scene should have an image
-    if (engine.generateSceneImage(initialMessage).isEmpty) {
-      result("hasImage") = false
-    } else {
+    if (engine.shouldGenerateSceneImage(initialMessage)) {
       result("hasImage") = true
       // Generate image asynchronously for initial scene
       Future {
@@ -70,6 +221,8 @@ object SzorkServer extends cask.Main with cask.Routes {
         session.pendingImages(messageIndex) = imageOpt
         logger.info(s"[$sessionId] Async image generation completed for initial scene, message $messageIndex")
       }(imageEC)
+    } else {
+      result("hasImage") = false
     }
     
     // Check if the initial scene should have background music
@@ -115,15 +268,26 @@ object SzorkServer extends cask.Main with cask.Routes {
               "messageIndex" -> messageIndex
             )
             
+            // Add scene data if available (without revealing location IDs)
+            gameResponse.scene.foreach { scene =>
+              result("scene") = ujson.Obj(
+                "locationName" -> scene.locationName,
+                "exits" -> scene.exits.map(exit => ujson.Obj(
+                  "direction" -> exit.direction,
+                  "description" -> ujson.Str(exit.description.getOrElse(""))
+                )),
+                "items" -> scene.items,
+                "npcs" -> scene.npcs
+              )
+            }
+            
             // Add audio if generated
             gameResponse.audioBase64.foreach { audio =>
               result("audio") = audio
             }
             
             // Check if this is a scene that needs an image
-            if (session.engine.generateSceneImage(gameResponse.text).isEmpty) {
-              result("hasImage") = false
-            } else {
+            if (session.engine.shouldGenerateSceneImage(gameResponse.text)) {
               result("hasImage") = true
               // Generate image asynchronously
               Future {
@@ -132,6 +296,8 @@ object SzorkServer extends cask.Main with cask.Routes {
                 session.pendingImages(messageIndex) = imageOpt
                 logger.info(s"Async image generation completed for session $sessionId, message $messageIndex")
               }(imageEC)
+            } else {
+              result("hasImage") = false
             }
             
             // Check if this is a scene that needs background music
@@ -208,15 +374,26 @@ object SzorkServer extends cask.Main with cask.Routes {
                     "messageIndex" -> messageIndex
                   )
                   
+                  // Add scene data if available (without revealing location IDs)
+                  gameResponse.scene.foreach { scene =>
+                    result("scene") = ujson.Obj(
+                      "locationName" -> scene.locationName,
+                      "exits" -> scene.exits.map(exit => ujson.Obj(
+                        "direction" -> exit.direction,
+                        "description" -> ujson.Str(exit.description.getOrElse(""))
+                      )),
+                      "items" -> scene.items,
+                      "npcs" -> scene.npcs
+                    )
+                  }
+                  
                   // Add audio if generated
                   gameResponse.audioBase64.foreach { audio =>
                     result("audio") = audio
                   }
                   
                   // Check if this is a scene that needs an image
-                  if (session.engine.generateSceneImage(gameResponse.text).isEmpty) {
-                    result("hasImage") = false
-                  } else {
+                  if (session.engine.shouldGenerateSceneImage(gameResponse.text)) {
                     result("hasImage") = true
                     // Generate image asynchronously
                     Future {
@@ -225,6 +402,8 @@ object SzorkServer extends cask.Main with cask.Routes {
                       session.pendingImages(messageIndex) = imageOpt
                       logger.info(s"Async image generation completed for session $sessionId, message $messageIndex (audio)")
                     }(imageEC)
+                  } else {
+                    result("hasImage") = false
                   }
                   
                   // Check if this is a scene that needs background music

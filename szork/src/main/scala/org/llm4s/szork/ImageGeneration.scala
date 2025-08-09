@@ -11,10 +11,15 @@ class ImageGeneration {
     throw new IllegalStateException("OPENAI_API_KEY not found in environment")
   )
   
-  def generateScene(prompt: String, style: String = "fantasy art, digital painting"): Either[String, String] = {
+  def generateScene(prompt: String, style: String = ""): Either[String, String] = {
     logger.info(s"Generating image for prompt: ${prompt.take(100)}...")
     
-    val fullPrompt = s"$prompt, $style, highly detailed, atmospheric lighting"
+    // Use prompt as-is if no additional style specified
+    val fullPrompt = if (style.isEmpty) {
+      prompt
+    } else {
+      s"$prompt, $style"
+    }
     
     try {
       val response = post(

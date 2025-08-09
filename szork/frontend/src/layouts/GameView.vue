@@ -1,20 +1,26 @@
 <template>
   <v-container fluid class="game-container pa-0">
     <!-- Intro Screen -->
-    <div v-if="!gameStarted" class="intro-screen">
+    <div v-if="!gameStarted && !setupStarted" class="intro-screen">
       <div class="intro-content">
         <img src="/SZork_intro.webp" alt="Welcome to Szork" class="intro-image" />
         <v-btn 
           color="primary" 
           size="x-large" 
           class="begin-button"
-          @click="beginAdventure"
+          @click="beginSetup"
           elevation="8"
         >
           Begin Your Adventure
         </v-btn>
       </div>
     </div>
+    
+    <!-- Adventure Setup Screen -->
+    <AdventureSetup 
+      v-else-if="setupStarted && !gameStarted"
+      @adventure-ready="onAdventureReady"
+    />
     
     <!-- Game Screen -->
     <v-row v-else class="game-row ma-0">
@@ -77,7 +83,15 @@
                     ></v-progress-circular>
                   </div>
                 </div>
-                <div class="message-text">{{ message.text }}</div>
+                <div class="message-text">
+                  {{ message.text }}
+                  <div v-if="message.scene && message.scene.exits && message.scene.exits.length > 0" class="exits-info">
+                    <strong>Exits:</strong> 
+                    <span v-for="(exit, index) in message.scene.exits" :key="index">
+                      {{ exit.direction }}<span v-if="exit.description"> ({{ exit.description }})</span><span v-if="index < message.scene.exits.length - 1">, </span>
+                    </span>
+                  </div>
+                </div>
               </div>
               <div v-if="loading" class="loading-indicator">
                 <v-progress-circular
@@ -137,6 +151,19 @@
 <script lang="ts">
 import { defineComponent, ref, nextTick, onMounted, watch } from "vue";
 import axios from "axios";
+import AdventureSetup from "@/components/AdventureSetup.vue";
+
+interface Exit {
+  direction: string;
+  description?: string;
+}
+
+interface Scene {
+  locationName: string;
+  exits: Exit[];
+  items?: string[];
+  npcs?: string[];
+}
 
 interface GameMessage {
   text: string;
@@ -145,10 +172,14 @@ interface GameMessage {
   messageIndex?: number;
   hasImage?: boolean;
   imageLoading?: boolean;
+  scene?: Scene;
 }
 
 export default defineComponent({
   name: "GameView",
+  components: {
+    AdventureSetup
+  },
   setup() {
     const messages = ref<GameMessage[]>([]);
     const userInput = ref("");
@@ -161,6 +192,9 @@ export default defineComponent({
     const narrationEnabled = ref(true);
     const narrationVolume = ref(0.8);
     const gameStarted = ref(false);
+    const setupStarted = ref(false);
+    const adventureTheme = ref<any>(null);
+    const artStyle = ref<any>(null);
     const backgroundMusicEnabled = ref(true);
     const backgroundMusicVolume = ref(0.3);
     const currentBackgroundMusic = ref<HTMLAudioElement | null>(null);
@@ -181,8 +215,15 @@ export default defineComponent({
       }
     };
 
-    const beginAdventure = () => {
+    const beginSetup = () => {
+      setupStarted.value = true;
+    };
+    
+    const onAdventureReady = (config: { theme: any, style: any }) => {
+      adventureTheme.value = config.theme;
+      artStyle.value = config.style;
       gameStarted.value = true;
+      setupStarted.value = false;
       nextTick(() => {
         startGame();
       });
@@ -191,8 +232,11 @@ export default defineComponent({
     const startGame = async () => {
       try {
         loading.value = true;
-        log("Starting game...");
-        const response = await axios.post("/api/game/start");
+        log("Starting game with theme:", adventureTheme.value, "and style:", artStyle.value);
+        const response = await axios.post("/api/game/start", {
+          theme: adventureTheme.value,
+          artStyle: artStyle.value
+        });
         log("Game start response:", response.data);
         sessionId.value = response.data.sessionId;
         const initialMessage: GameMessage = {
@@ -200,7 +244,8 @@ export default defineComponent({
           type: "game",
           messageIndex: response.data.messageIndex,
           hasImage: response.data.hasImage || false,
-          imageLoading: response.data.hasImage || false
+          imageLoading: response.data.hasImage || false,
+          scene: response.data.scene
         };
         
         messages.value.push(initialMessage);
@@ -264,7 +309,8 @@ export default defineComponent({
             type: "game",
             messageIndex: response.data.messageIndex,
             hasImage: response.data.hasImage || false,
-            imageLoading: response.data.hasImage || false
+            imageLoading: response.data.hasImage || false,
+            scene: response.data.scene
           };
           
           messages.value.push(newMessage);
@@ -421,7 +467,8 @@ export default defineComponent({
             type: "game",
             messageIndex: response.data.messageIndex,
             hasImage: response.data.hasImage || false,
-            imageLoading: response.data.hasImage || false
+            imageLoading: response.data.hasImage || false,
+            scene: response.data.scene
           };
           
           messages.value.push(newMessage);
@@ -678,29 +725,28 @@ export default defineComponent({
     // Watch for background music enabled changes
     watch(backgroundMusicEnabled, (enabled) => {
       if (!enabled && currentBackgroundMusic.value) {
-        // Fade out and stop music
-        const fadeOutInterval = setInterval(() => {
-          if (currentBackgroundMusic.value && currentBackgroundMusic.value.volume > 0.01) {
-            currentBackgroundMusic.value.volume = Math.max(0, currentBackgroundMusic.value.volume - 0.02);
-          } else {
-            clearInterval(fadeOutInterval);
-            if (currentBackgroundMusic.value) {
-              currentBackgroundMusic.value.pause();
-              currentBackgroundMusic.value.currentTime = 0; // Reset to beginning
+        log("Disabling background music");
+        // Immediately stop music
+        if (currentBackgroundMusic.value) {
+          currentBackgroundMusic.value.pause();
+          currentBackgroundMusic.value.currentTime = 0; // Reset to beginning
+          // Clear the reference so it doesn't try to resume
+          const musicToStop = currentBackgroundMusic.value;
+          currentBackgroundMusic.value = null;
+          // Optional: fade out for smoother experience
+          const fadeOutInterval = setInterval(() => {
+            if (musicToStop.volume > 0.01) {
+              musicToStop.volume = Math.max(0, musicToStop.volume - 0.05);
+            } else {
+              clearInterval(fadeOutInterval);
+              musicToStop.pause();
             }
-          }
-        }, 50);
-      } else if (enabled && currentBackgroundMusic.value && currentBackgroundMusic.value.paused) {
-        // Resume music with fade in
-        currentBackgroundMusic.value.volume = 0; // Start at 0 for fade in
-        currentBackgroundMusic.value.play();
-        const fadeInInterval = setInterval(() => {
-          if (currentBackgroundMusic.value && currentBackgroundMusic.value.volume < backgroundMusicVolume.value) {
-            currentBackgroundMusic.value.volume = Math.min(backgroundMusicVolume.value, currentBackgroundMusic.value.volume + 0.02);
-          } else {
-            clearInterval(fadeInInterval);
-          }
-        }, 50);
+          }, 20);
+        }
+      } else if (enabled) {
+        log("Background music re-enabled (music will play when next scene triggers it)");
+        // Music will start playing again when a new scene with music is encountered
+        // We don't resume old music since it was cleared
       }
     });
 
@@ -732,7 +778,9 @@ export default defineComponent({
       narrationVolume,
       pollForImage,
       gameStarted,
-      beginAdventure,
+      setupStarted,
+      beginSetup,
+      onAdventureReady,
       backgroundMusicEnabled,
       backgroundMusicVolume,
       currentMusicMood,
@@ -859,6 +907,14 @@ export default defineComponent({
 .game-message.system {
   color: #ffb74d;
   font-style: italic;
+}
+
+.exits-info {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: #4CAF50;
+  font-size: 0.95em;
 }
 
 .game-input {
