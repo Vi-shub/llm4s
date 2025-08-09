@@ -12,6 +12,24 @@ class ImageGeneration {
   )
   
   def generateScene(prompt: String, style: String = ""): Either[String, String] = {
+    generateSceneWithCache(prompt, style, None, None)
+  }
+  
+  def generateSceneWithCache(prompt: String, style: String = "", gameId: Option[String] = None, locationId: Option[String] = None): Either[String, String] = {
+    // Check cache first if gameId and locationId are provided
+    (gameId, locationId) match {
+      case (Some(gId), Some(lId)) =>
+        MediaCache.getCachedImage(gId, lId, prompt, style) match {
+          case Some(cachedImage) =>
+            logger.info(s"Using cached image for game=$gId, location=$lId")
+            return Right(cachedImage)
+          case None =>
+            logger.info(s"No cached image found for game=$gId, location=$lId - generating new image")
+        }
+      case _ =>
+        logger.info(s"No cache info provided - generating image directly")
+    }
+    
     logger.info(s"Generating image for prompt: ${prompt.take(100)}...")
     
     // Use prompt as-is if no additional style specified
@@ -43,6 +61,16 @@ class ImageGeneration {
         val json = read(response.text())
         val base64Image = json("data")(0)("b64_json").str
         logger.info(s"Image generation successful, base64 length: ${base64Image.length}")
+        
+        // Cache the generated image if gameId and locationId are provided
+        (gameId, locationId) match {
+          case (Some(gId), Some(lId)) =>
+            MediaCache.cacheImage(gId, lId, prompt, style, base64Image)
+            logger.info(s"Cached generated image for game=$gId, location=$lId")
+          case _ =>
+            logger.debug("No cache info provided - skipping image caching")
+        }
+        
         Right(base64Image)
       } else {
         val error = s"Image generation failed with status ${response.statusCode}: ${response.text()}"

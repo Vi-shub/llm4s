@@ -122,12 +122,31 @@ class MusicGeneration {
   }
   
   def generateMusic(mood: MusicMood, context: String = ""): Either[String, String] = {
+    generateMusicWithCache(mood, context, None, None)
+  }
+  
+  def generateMusicWithCache(mood: MusicMood, context: String = "", gameId: Option[String] = None, locationId: Option[String] = None): Either[String, String] = {
     if (!isAvailable) {
       logger.warn("Music generation disabled - REPLICATE_API_KEY not configured")
       return Left("Music generation not available")
     }
     
     val prompt = mood.generatePrompt(context)
+    
+    // Check cache first if gameId and locationId are provided
+    (gameId, locationId) match {
+      case (Some(gId), Some(lId)) =>
+        MediaCache.getCachedMusic(gId, lId, prompt, mood.name) match {
+          case Some(cachedMusic) =>
+            logger.info(s"Using cached music for game=$gId, location=$lId, mood=${mood.name}")
+            return Right(cachedMusic)
+          case None =>
+            logger.info(s"No cached music found for game=$gId, location=$lId, mood=${mood.name} - generating new music")
+        }
+      case _ =>
+        logger.info(s"No cache info provided - generating music directly")
+    }
+    
     logger.info(s"Generating music for mood: ${mood.name}, prompt: $prompt")
     
     try {
@@ -164,7 +183,20 @@ class MusicGeneration {
       val result = pollPrediction(predictionId)
       result match {
         case Right(audioUrl) =>
-          downloadAndEncodeAudio(audioUrl)
+          downloadAndEncodeAudio(audioUrl) match {
+            case Right(base64Audio) =>
+              // Cache the generated music if gameId and locationId are provided
+              (gameId, locationId) match {
+                case (Some(gId), Some(lId)) =>
+                  MediaCache.cacheMusic(gId, lId, prompt, mood.name, base64Audio)
+                  logger.info(s"Cached generated music for game=$gId, location=$lId, mood=${mood.name}")
+                case _ =>
+                  logger.debug("No cache info provided - skipping music caching")
+              }
+              Right(base64Audio)
+            case Left(error) =>
+              Left(error)
+          }
         case Left(error) =>
           Left(error)
       }

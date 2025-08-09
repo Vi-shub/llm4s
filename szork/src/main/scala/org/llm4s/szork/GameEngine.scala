@@ -220,15 +220,15 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
     currentScene.isDefined || isNewScene(responseText)
   }
   
-  def generateSceneImage(responseText: String): Option[String] = {
+  def generateSceneImage(responseText: String, gameId: Option[String] = None): Option[String] = {
     // Use detailed description from current scene if available
-    val imagePrompt = currentScene match {
+    val (imagePrompt, locationId) = currentScene match {
       case Some(scene) =>
         logger.info(s"[$sessionId] Using structured image description for ${scene.locationId}")
-        scene.imageDescription
+        (scene.imageDescription, Some(scene.locationId))
       case None if isNewScene(responseText) =>
         logger.info(s"[$sessionId] No structured scene, extracting from text")
-        extractSceneDescription(responseText)
+        (extractSceneDescription(responseText), None)
       case _ =>
         return None
     }
@@ -237,10 +237,11 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
     val styledPrompt = s"$imagePrompt, rendered in $artStyleDescription"
     logger.info(s"[$sessionId] Generating scene image with prompt: ${styledPrompt.take(100)}...")
     val imageGen = ImageGeneration()
-    // Pass empty string to avoid adding any extra style modifiers
-    imageGen.generateScene(styledPrompt, "") match {
+    
+    // Use cached version if available
+    imageGen.generateSceneWithCache(styledPrompt, "", gameId, locationId) match {
       case Right(image) =>
-        logger.info(s"[$sessionId] Scene image generated, base64: ${image.length}")
+        logger.info(s"[$sessionId] Scene image generated/retrieved, base64: ${image.length}")
         Some(image)
       case Left(error) =>
         logger.error(s"[$sessionId] Failed to generate image: $error")
@@ -295,7 +296,7 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
     }
   }
   
-  def generateBackgroundMusic(responseText: String): Option[(String, String)] = {
+  def generateBackgroundMusic(responseText: String, gameId: Option[String] = None): Option[(String, String)] = {
     if (shouldGenerateBackgroundMusic(responseText)) {
       logger.info(s"[$sessionId] Checking if background music should be generated")
       try {
@@ -308,22 +309,22 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
         }
         
         // Use structured mood and description if available
-        val (mood, contextText) = currentScene match {
+        val (mood, contextText, locationId) = currentScene match {
           case Some(scene) =>
             // Map the scene's mood string to a MusicMood object
             val moodObj = getMusicMoodFromString(musicGen, scene.musicMood)
             logger.info(s"[$sessionId] Using structured music for ${scene.locationId}: mood=${scene.musicMood}")
-            (moodObj, scene.musicDescription)
+            (moodObj, scene.musicDescription, Some(scene.locationId))
           case None =>
             val detectedMood = musicGen.detectMoodFromText(responseText)
             logger.info(s"[$sessionId] Detected mood: ${detectedMood.name} from text")
-            (detectedMood, responseText)
+            (detectedMood, responseText, None)
         }
         
         logger.info(s"[$sessionId] Generating background music with mood: ${mood.name}")
-        musicGen.generateMusic(mood, contextText) match {
+        musicGen.generateMusicWithCache(mood, contextText, gameId, locationId) match {
           case Right(musicBase64) =>
-            logger.info(s"[$sessionId] Background music generated for mood: ${mood.name}, base64: ${musicBase64.length}")
+            logger.info(s"[$sessionId] Background music generated/retrieved for mood: ${mood.name}, base64: ${musicBase64.length}")
             Some((musicBase64, mood.name))
           case Left(error) =>
             logger.warn(s"[$sessionId] Music generation not available: $error")

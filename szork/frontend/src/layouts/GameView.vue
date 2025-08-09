@@ -222,6 +222,7 @@ export default defineComponent({
     const currentBackgroundMusic = ref<HTMLAudioElement | null>(null);
     const nextBackgroundMusic = ref<HTMLAudioElement | null>(null);
     const currentMusicMood = ref<string | null>(null);
+    const lastMusicData = ref<{ base64: string; mood: string } | null>(null);
     const currentNarration = ref<HTMLAudioElement | null>(null);
     
     // Helper function for logging with timestamps
@@ -267,12 +268,32 @@ export default defineComponent({
           
           // Restore conversation history
           if (response.data.conversationHistory && response.data.conversationHistory.length > 0) {
-            response.data.conversationHistory.forEach((entry: any) => {
-              messages.value.push({
+            response.data.conversationHistory.forEach((entry: any, index: number) => {
+              const isLastAssistantMessage = 
+                entry.role === "assistant" && 
+                index === response.data.conversationHistory.length - 1;
+              
+              const message: GameMessage = {
                 text: entry.content,
                 type: entry.role === "user" ? "user" : "game",
-                messageIndex: messages.value.length
-              });
+                messageIndex: messages.value.length,
+                // Add scene info to the last assistant message
+                scene: isLastAssistantMessage && response.data.scene ? response.data.scene : undefined,
+                hasImage: false,
+                imageLoading: false,
+                // Add cached image if available for last message
+                image: isLastAssistantMessage && response.data.scene?.cachedImage ? 
+                  response.data.scene.cachedImage : undefined
+              };
+              
+              // If we have a cached image, mark it as having an image
+              if (message.image) {
+                message.hasImage = true;
+                message.imageLoading = false;
+                log(`Loaded cached image for location: ${response.data.scene?.locationId}`);
+              }
+              
+              messages.value.push(message);
             });
             log(`Restored ${response.data.conversationHistory.length} conversation entries`);
           }
@@ -280,7 +301,7 @@ export default defineComponent({
           // Show current scene info
           if (response.data.scene) {
             const scene = response.data.scene;
-            log(`Loaded game at scene: ${scene.locationName}`);
+            log(`Loaded game at scene: ${scene.locationName} with ${scene.exits?.length || 0} exits`);
           }
           
           gameStarted.value = true;
@@ -739,8 +760,11 @@ export default defineComponent({
     const playBackgroundMusic = (musicBase64: string, mood: string) => {
       log(`Playing background music, mood: ${mood}, enabled: ${backgroundMusicEnabled.value}`);
       
+      // Store the music data for potential resume
+      lastMusicData.value = { base64: musicBase64, mood: mood };
+      
       if (!backgroundMusicEnabled.value) {
-        log("Background music is disabled, skipping playback");
+        log("Background music is disabled, storing for later");
         return;
       }
       
@@ -822,27 +846,43 @@ export default defineComponent({
     watch(backgroundMusicEnabled, (enabled) => {
       if (!enabled && currentBackgroundMusic.value) {
         log("Disabling background music");
-        // Immediately stop music
+        // Pause music but keep the reference
         if (currentBackgroundMusic.value) {
-          currentBackgroundMusic.value.pause();
-          currentBackgroundMusic.value.currentTime = 0; // Reset to beginning
-          // Clear the reference so it doesn't try to resume
+          // Fade out for smoother experience
           const musicToStop = currentBackgroundMusic.value;
-          currentBackgroundMusic.value = null;
-          // Optional: fade out for smoother experience
           const fadeOutInterval = setInterval(() => {
             if (musicToStop.volume > 0.01) {
               musicToStop.volume = Math.max(0, musicToStop.volume - 0.05);
             } else {
               clearInterval(fadeOutInterval);
               musicToStop.pause();
+              log("Background music paused");
             }
           }, 20);
         }
       } else if (enabled) {
-        log("Background music re-enabled (music will play when next scene triggers it)");
-        // Music will start playing again when a new scene with music is encountered
-        // We don't resume old music since it was cleared
+        log("Background music re-enabled");
+        // Resume current music if it exists and is paused
+        if (currentBackgroundMusic.value && currentBackgroundMusic.value.paused) {
+          log("Resuming paused background music");
+          currentBackgroundMusic.value.volume = 0;
+          currentBackgroundMusic.value.play().then(() => {
+            // Fade in
+            const fadeInInterval = setInterval(() => {
+              if (currentBackgroundMusic.value && currentBackgroundMusic.value.volume < backgroundMusicVolume.value) {
+                currentBackgroundMusic.value.volume = Math.min(backgroundMusicVolume.value, currentBackgroundMusic.value.volume + 0.02);
+              } else {
+                clearInterval(fadeInInterval);
+              }
+            }, 50);
+          }).catch(error => {
+            log("Error resuming background music:", error);
+          });
+        } else if (lastMusicData.value) {
+          // If no current music but we have last music data, play it
+          log("Playing last known background music");
+          playBackgroundMusic(lastMusicData.value.base64, lastMusicData.value.mood);
+        }
       }
     });
 

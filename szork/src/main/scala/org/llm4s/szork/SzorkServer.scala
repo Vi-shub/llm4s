@@ -222,7 +222,7 @@ object SzorkServer extends cask.Main with cask.Routes {
       // Generate image asynchronously for initial scene
       Future {
         logger.info(s"[$sessionId] Starting async image generation for initial scene, message $messageIndex")
-        val imageOpt = engine.generateSceneImage(initialMessage)
+        val imageOpt = engine.generateSceneImage(initialMessage, Some(gameId))
         session.pendingImages(messageIndex) = imageOpt
         logger.info(s"[$sessionId] Async image generation completed for initial scene, message $messageIndex")
       }(imageEC)
@@ -236,7 +236,7 @@ object SzorkServer extends cask.Main with cask.Routes {
       // Generate music asynchronously for initial scene
       Future {
         logger.info(s"[$sessionId] Starting async music generation for initial scene, message $messageIndex")
-        val musicOpt = engine.generateBackgroundMusic(initialMessage)
+        val musicOpt = engine.generateBackgroundMusic(initialMessage, Some(gameId))
         session.pendingMusic(messageIndex) = musicOpt
         logger.info(s"[$sessionId] Async music generation completed for initial scene, message $messageIndex")
       }(imageEC)
@@ -297,7 +297,7 @@ object SzorkServer extends cask.Main with cask.Routes {
               // Generate image asynchronously
               Future {
                 logger.info(s"Starting async image generation for session $sessionId, message $messageIndex")
-                val imageOpt = session.engine.generateSceneImage(gameResponse.text)
+                val imageOpt = session.engine.generateSceneImage(gameResponse.text, Some(session.gameId))
                 session.pendingImages(messageIndex) = imageOpt
                 logger.info(s"Async image generation completed for session $sessionId, message $messageIndex")
               }(imageEC)
@@ -311,7 +311,7 @@ object SzorkServer extends cask.Main with cask.Routes {
               // Generate music asynchronously
               Future {
                 logger.info(s"Starting async music generation for session $sessionId, message $messageIndex")
-                val musicOpt = session.engine.generateBackgroundMusic(gameResponse.text)
+                val musicOpt = session.engine.generateBackgroundMusic(gameResponse.text, Some(session.gameId))
                 session.pendingMusic(messageIndex) = musicOpt
                 logger.info(s"Async music generation completed for session $sessionId, message $messageIndex")
               }(imageEC)
@@ -416,7 +416,7 @@ object SzorkServer extends cask.Main with cask.Routes {
                     // Generate image asynchronously
                     Future {
                       logger.info(s"Starting async image generation for session $sessionId, message $messageIndex (audio)")
-                      val imageOpt = session.engine.generateSceneImage(gameResponse.text)
+                      val imageOpt = session.engine.generateSceneImage(gameResponse.text, Some(session.gameId))
                       session.pendingImages(messageIndex) = imageOpt
                       logger.info(s"Async image generation completed for session $sessionId, message $messageIndex (audio)")
                     }(imageEC)
@@ -430,7 +430,7 @@ object SzorkServer extends cask.Main with cask.Routes {
                     // Generate music asynchronously
                     Future {
                       logger.info(s"Starting async music generation for session $sessionId, message $messageIndex (audio)")
-                      val musicOpt = session.engine.generateBackgroundMusic(gameResponse.text)
+                      val musicOpt = session.engine.generateBackgroundMusic(gameResponse.text, Some(session.gameId))
                       session.pendingMusic(messageIndex) = musicOpt
                       logger.info(s"Async music generation completed for session $sessionId, message $messageIndex (audio)")
                     }(imageEC)
@@ -671,12 +671,25 @@ object SzorkServer extends cask.Main with cask.Routes {
         sessions(sessionId) = session
         logger.info(s"Game loaded successfully: $gameId -> session $sessionId")
         
+        // Check for cached image for current scene
+        val cachedImage = gameState.currentScene.flatMap { scene =>
+          gameState.artStyle.flatMap { artStyle =>
+            MediaCache.getCachedImage(
+              gameId, 
+              scene.locationId, 
+              scene.imageDescription, 
+              artStyle.id
+            )
+          }
+        }
+        
         ujson.Obj(
           "status" -> "success",
           "sessionId" -> sessionId,
           "gameId" -> gameId,
           "scene" -> gameState.currentScene.map { scene =>
             ujson.Obj(
+              "locationId" -> scene.locationId,
               "locationName" -> scene.locationName,
               "narrationText" -> scene.narrationText,
               "exits" -> scene.exits.map(exit => ujson.Obj(
@@ -684,7 +697,12 @@ object SzorkServer extends cask.Main with cask.Routes {
                 "description" -> ujson.Str(exit.description.getOrElse(""))
               )),
               "items" -> scene.items,
-              "npcs" -> scene.npcs
+              "npcs" -> scene.npcs,
+              "imageDescription" -> scene.imageDescription,
+              "cachedImage" -> (cachedImage match {
+                case Some(img) => ujson.Str(img)
+                case None => ujson.Null
+              })
             )
           }.getOrElse(ujson.Null),
           "conversationHistory" -> gameState.conversationHistory.map { entry =>
@@ -721,6 +739,56 @@ object SzorkServer extends cask.Main with cask.Routes {
         )
       }
     )
+  }
+  
+  @get("/api/game/cache/:gameId")
+  def getCacheStats(gameId: String) = {
+    logger.info(s"Getting cache stats for game: $gameId")
+    
+    val stats = MediaCache.getCacheStats(gameId)
+    ujson.Obj(
+      "status" -> "success",
+      "cache" -> ujson.Obj(
+        "gameId" -> stats.getOrElse("gameId", "unknown").toString,
+        "exists" -> (stats.getOrElse("exists", false) match {
+          case b: Boolean => b
+          case _ => false
+        }),
+        "imageCount" -> (stats.getOrElse("imageCount", 0) match {
+          case l: Long => l.toInt
+          case i: Int => i
+          case _ => 0
+        }),
+        "musicCount" -> (stats.getOrElse("musicCount", 0) match {
+          case l: Long => l.toInt
+          case i: Int => i
+          case _ => 0
+        }),
+        "totalSizeBytes" -> (stats.getOrElse("totalSizeBytes", 0L) match {
+          case l: Long => l
+          case i: Int => i.toLong
+          case _ => 0L
+        })
+      )
+    )
+  }
+  
+  @delete("/api/game/cache/:gameId")  
+  def clearGameCache(gameId: String) = {
+    logger.info(s"Clearing cache for game: $gameId")
+    
+    MediaCache.clearGameCache(gameId) match {
+      case Right(_) =>
+        ujson.Obj(
+          "status" -> "success",
+          "message" -> s"Cache cleared for game: $gameId"
+        )
+      case Left(error) =>
+        ujson.Obj(
+          "status" -> "error",
+          "error" -> error
+        )
+    }
   }
   
   // Initialize routes
