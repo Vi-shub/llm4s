@@ -12,3 +12,6 @@ CLAUDE.md
 .metals
 .vscode
 **/.claude/settings.local.json
+# Szork cache and save files
+szork/szork-cache/
+szork/szork-saves/*.json
