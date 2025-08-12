@@ -1,11 +1,9 @@
 <!-- Slide 1: Title Slide -->
-# Scala Meets GenAI
+# Build the Cool Stuff with LLM4S
 **Page Layout:** title
 
 **Visual Specification:**
-- Background: Animated gradient transitioning between Scala red (#DC322F) and AI blue (#0066CC)
 - Logo: ![LLM4S Logo](assets/logos/llm4s_logo.png) (bottom center)
-- Visual effect: Subtle particle animation suggesting neural connections
 
 **Content:**
 ## Build the Cool Stuff with LLM4S
@@ -14,6 +12,7 @@
 **Event:** London Scala User Group | August 13th, 2024
 
 **Speaker Notes:**
+
 Instead of starting with introductions, we're going to jump right in. Can you build the coolest GenAI apps in Scala? Let's find out with a game!
 
 ---
@@ -23,7 +22,7 @@ Instead of starting with introductions, we're going to jump right in. Can you bu
 **Page Layout:** full-screen
 
 **Visual Specification:**
-- Background: ![SZork Intro](assets/screenshots/szork_intro.webp)
+- Background: ![Welcome to SZork](assets/screenshots/welcome_to_szork.png)
 - Overlay: Semi-transparent dark panel at bottom with text
 - Font: Retro gaming font for "SZork" title
 
