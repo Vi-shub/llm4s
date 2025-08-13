@@ -2,8 +2,32 @@
   <div class="adventure-setup">
     <div class="setup-content">
       <transition name="fade" mode="out-in">
+        <!-- Generating Adventure Screen -->
+        <div v-if="currentStep === 'generating'" class="setup-step generating-adventure">
+          <h2 class="setup-title">Crafting Your Adventure</h2>
+          
+          <div class="generation-container">
+            <div class="loading-animation">
+              <div class="spinner"></div>
+              <div class="pulse-ring"></div>
+            </div>
+            
+            <div class="generation-status">
+              <p class="status-text">{{ generationStatus }}</p>
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: generationProgress + '%' }"></div>
+              </div>
+            </div>
+            
+            <div v-if="adventureOutline" class="adventure-preview">
+              <h3>{{ adventureOutline.title }}</h3>
+              <p class="quest-preview">{{ adventureOutline.mainQuest }}</p>
+            </div>
+          </div>
+        </div>
+        
         <!-- Theme Selection -->
-        <div v-if="currentStep === 'theme'" class="setup-step">
+        <div v-else-if="currentStep === 'theme'" class="setup-step">
           <h2 class="setup-title">Choose Your Adventure Theme</h2>
           
           <div class="theme-grid">
@@ -46,12 +70,13 @@
           
           <div class="action-buttons">
             <v-btn
-              color="primary"
               size="large"
               :disabled="!canProceedFromTheme"
               @click="proceedToStyle"
+              class="continue-btn"
             >
               Continue to Art Style
+              <v-icon end>mdi-chevron-right</v-icon>
             </v-btn>
           </div>
         </div>
@@ -92,13 +117,14 @@
               Back
             </v-btn>
             <v-btn
-              color="primary"
               size="large"
               :disabled="!selectedStyle"
               @click="startAdventure"
               :loading="startingGame"
+              class="begin-adventure-btn"
             >
               Begin Adventure
+              <v-icon end>mdi-chevron-right</v-icon>
             </v-btn>
           </div>
         </div>
@@ -131,7 +157,7 @@ export default defineComponent({
   name: "AdventureSetup",
   emits: ["adventure-ready"],
   setup(_, { emit }) {
-    const currentStep = ref<"theme" | "style">("theme");
+    const currentStep = ref<"theme" | "style" | "generating">("theme");
     const selectedTheme = ref<string | null>(null);
     const selectedStyle = ref<string | null>(null);
     const customThemeInput = ref("");
@@ -139,6 +165,9 @@ export default defineComponent({
     const validatingCustomTheme = ref(false);
     const startingGame = ref(false);
     const validatedCustomTheme = ref("");
+    const adventureOutline = ref<any>(null);
+    const generationStatus = ref("Creating your unique adventure...");
+    const generationProgress = ref(0);
     
     const predefinedThemes: Theme[] = [
       {
@@ -294,10 +323,59 @@ export default defineComponent({
       currentStep.value = "theme";
     };
     
-    const startAdventure = () => {
+    const generateAdventureOutline = async (themeData: any, styleData: any) => {
+      try {
+        // Update status messages during generation
+        const statusMessages = [
+          "Creating your unique adventure...",
+          "Designing exciting locations...",
+          "Placing mysterious items...",
+          "Bringing characters to life...",
+          "Weaving the story together...",
+          "Adding the finishing touches..."
+        ];
+        
+        let messageIndex = 0;
+        const statusInterval = setInterval(() => {
+          messageIndex = (messageIndex + 1) % statusMessages.length;
+          generationStatus.value = statusMessages[messageIndex];
+          generationProgress.value = Math.min(generationProgress.value + 15, 90);
+        }, 2000);
+        
+        const response = await axios.post("/api/game/generate-adventure", {
+          theme: themeData,
+          artStyle: styleData
+        });
+        
+        clearInterval(statusInterval);
+        
+        if (response.data.status === "success") {
+          adventureOutline.value = response.data.outline;
+          generationStatus.value = "Adventure ready! Starting your journey...";
+          generationProgress.value = 100;
+          
+          // Wait a moment to show completion
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          return response.data.outline;
+        } else {
+          throw new Error(response.data.message || "Failed to generate adventure");
+        }
+      } catch (error) {
+        console.error("Error generating adventure:", error);
+        generationStatus.value = "Using default adventure...";
+        generationProgress.value = 100;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return null; // Will proceed without outline
+      }
+    };
+    
+    const startAdventure = async () => {
       if (!selectedTheme.value || !selectedStyle.value) return;
       
       startingGame.value = true;
+      currentStep.value = "generating";
+      generationProgress.value = 10;
       
       // Get the theme details
       let themeData;
@@ -318,13 +396,19 @@ export default defineComponent({
       
       // Get the style details
       const style = artStyles.find(s => s.id === selectedStyle.value);
+      const styleData = {
+        id: style?.id,
+        name: style?.name
+      };
       
+      // Generate the adventure outline
+      const outline = await generateAdventureOutline(themeData, styleData);
+      
+      // Emit the ready event with the outline
       emit("adventure-ready", {
         theme: themeData,
-        style: {
-          id: style?.id,
-          name: style?.name
-        }
+        style: styleData,
+        outline: outline
       });
     };
     
@@ -344,7 +428,10 @@ export default defineComponent({
       validateCustomTheme,
       proceedToStyle,
       goBackToTheme,
-      startAdventure
+      startAdventure,
+      adventureOutline,
+      generationStatus,
+      generationProgress
     };
   }
 });
@@ -485,6 +572,167 @@ export default defineComponent({
   
   .setup-title {
     font-size: 1.8rem;
+  }
+}
+
+.begin-adventure-btn, .continue-btn {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border: 2px solid #ffffff !important;
+  border-radius: 8px !important;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.5px;
+  padding: 0 24px !important;
+  box-shadow: 
+    inset 2px 2px 4px rgba(255, 255, 255, 0.2),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.begin-adventure-btn:hover:not(:disabled), .continue-btn:hover:not(:disabled) {
+  background-color: #1a1a1a !important;
+  border-color: #ffffff !important;
+  box-shadow: 
+    inset 2px 2px 6px rgba(255, 255, 255, 0.3),
+    inset -2px -2px 6px rgba(0, 0, 0, 0.6),
+    0 6px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.begin-adventure-btn:active:not(:disabled), .continue-btn:active:not(:disabled) {
+  box-shadow: 
+    inset 2px 2px 4px rgba(0, 0, 0, 0.6),
+    inset -2px -2px 4px rgba(255, 255, 255, 0.1),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+  transform: translateY(0);
+}
+
+.begin-adventure-btn:disabled, .continue-btn:disabled {
+  opacity: 0.5;
+  background-color: #333333 !important;
+  border-color: #666666 !important;
+}
+
+.generating-adventure {
+  text-align: center;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.generation-container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.loading-animation {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 2rem auto;
+}
+
+.spinner {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top: 3px solid #2196F3;
+  border-radius: 50%;
+  animation: spin 1.5s linear infinite;
+}
+
+.pulse-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 2px solid #2196F3;
+  border-radius: 50%;
+  animation: pulse 2s ease-out infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.generation-status {
+  margin: 2rem 0;
+}
+
+.status-text {
+  font-size: 1.2rem;
+  color: #ffffff;
+  margin-bottom: 1.5rem;
+  animation: fadeInOut 2s ease-in-out infinite;
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 0 auto;
+  max-width: 400px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2196F3, #00BCD4);
+  border-radius: 4px;
+  transition: width 0.5s ease;
+  box-shadow: 0 0 10px rgba(33, 150, 243, 0.5);
+}
+
+.adventure-preview {
+  margin-top: 3rem;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: fadeIn 0.5s ease-in;
+}
+
+.adventure-preview h3 {
+  font-size: 1.5rem;
+  color: #2196F3;
+  margin-bottom: 0.5rem;
+}
+
+.quest-preview {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.5;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

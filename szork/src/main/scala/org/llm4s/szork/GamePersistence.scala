@@ -20,6 +20,7 @@ case class GameState(
   currentScene: Option[GameScene],
   visitedLocations: Set[String],
   conversationHistory: List[ConversationEntry],
+  inventory: List[String],
   createdAt: Long,
   lastSaved: Long
 )
@@ -87,6 +88,7 @@ object GamePersistence {
           "content" -> entry.content,
           "timestamp" -> entry.timestamp
         )),
+        "inventory" -> state.inventory,
         "createdAt" -> state.createdAt,
         "lastSaved" -> state.lastSaved
       )
@@ -163,6 +165,7 @@ object GamePersistence {
           content = e("content").str,
           timestamp = e("timestamp").str.toLong
         )).toList,
+        inventory = json.obj.get("inventory").map(_.arr.map(_.str).toList).getOrElse(List.empty),
         createdAt = json("createdAt").str.toLong,
         lastSaved = json("lastSaved").str.toLong
       )

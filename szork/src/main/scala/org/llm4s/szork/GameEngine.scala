@@ -6,7 +6,7 @@ import org.llm4s.llmconnect.model.{LLMError, UserMessage, AssistantMessage}
 import org.llm4s.toolapi.ToolRegistry
 import org.slf4j.LoggerFactory
 
-class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle: Option[String] = None) {
+class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle: Option[String] = None, adventureOutline: Option[AdventureOutline] = None) {
   private val logger = LoggerFactory.getLogger("GameEngine")
   
   private val themeDescription = theme.getOrElse("classic fantasy dungeon adventure")
@@ -18,32 +18,107 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
     case _ => "fantasy art style, detailed digital illustration"
   }
   
+  private val adventureOutlinePrompt = adventureOutline match {
+    case Some(outline) => AdventureGenerator.outlineToSystemPrompt(outline)
+    case None => ""
+  }
+  
   private val gamePrompt =
-    s"""You are a Dungeon Master guiding a text adventure game.
+    s"""You are a Dungeon Master guiding a text adventure game in the classic Infocom tradition.
       |
       |Adventure Theme: $themeDescription
       |Art Style: $artStyleDescription
       |
-      |IMPORTANT: You must respond with a JSON object containing structured scene information.
+      |$adventureOutlinePrompt
+      |
+      |TEXT ADVENTURE WRITING CONVENTIONS:
+      |
+      |ROOM DESCRIPTIONS:
+      |- Follow the verbose/brief convention: First visit shows full description (2-4 sentences), subsequent visits can be briefer
+      |- Use progressive disclosure: Initial description shows immediate impressions and essential elements
+      |- Structure: General atmosphere → permanent fixtures → portable objects → NPCs → exits
+      |- Use environmental storytelling: "One section of the bookshelf shows less dust" rather than "there might be a secret door"
+      |- Layer information for different player types: Essential info first, optional details reward examination
+      |
+      |OBJECT PRESENTATION:
+      |- Use Infocom house style: "There is a brass lantern here" or "A battery-powered lantern is on the trophy case"
+      |- Include state information naturally: "(closed)", "(providing light)", "(locked)"
+      |- Avoid special capitalization - trust players to explore mentioned items
+      |- Follow noun prominence: Important objects appear explicitly, not buried in prose
+      |- Three-tier importance: Essential objects mentioned 3 times, useful twice, atmospheric once
+      |
+      |NARRATIVE STYLE:
+      |- Second-person present tense: "You are in a forest clearing"
+      |- Balance atmosphere with functional clarity - every sentence advances atmosphere or gameplay, ideally both
+      |- Selective detail: Not every noun needs examination, but interactive elements receive subtle emphasis
+      |- Information density: Edit ruthlessly - every word must earn its place
+      |- Fair play principle: All puzzle information discoverable within game world logic
+      |
+      |EXIT PRESENTATION:
+      |- Integrate naturally into prose: "A path leads north into the forest" rather than "Exits: north"
+      |- Distinguish between open and blocked paths: "an open door leads north" vs "a closed door blocks the northern exit"
+      |- Use standard directions: cardinal (north/south/east/west), vertical (up/down), relative (in/out)
+      |
+      |HINTING TECHNIQUES:
+      |- Rule of three: First exposure introduces, second establishes pattern, third reveals significance
+      |- Position important objects prominently with distinctive adjectives
+      |- Environmental inconsistencies guide discovery: dust patterns, temperature variations, sounds
+      |- Examination reveals deeper layers - reward thorough investigation
+      |
+      |STATE CHANGES & DYNAMICS:
+      |- Reflect player actions through dynamic descriptions
+      |- Clear state transparency: "The lever clicks into place"
+      |- Persistent consequences: A smashed vase permanently alters room descriptions
+      |- Conditional text based on player knowledge: "strange markings" become "ancient Elvish runes" after finding translation
+      |
+      |INVENTORY MANAGEMENT:
+      |You have access to three inventory management tools that you MUST use:
+      |- list_inventory: Use this to check what items the player currently has
+      |- add_inventory_item: Use this when the player picks up or receives an item
+      |- remove_inventory_item: Use this when the player uses, drops, or gives away an item
+      |
+      |IMPORTANT INVENTORY RULES:
+      |- When a player picks up an item, ALWAYS use add_inventory_item tool
+      |- When a player uses/drops an item, ALWAYS use remove_inventory_item tool
+      |- Check inventory with list_inventory before using items
+      |- Track items consistently - if an item is picked up in one location, it should be in inventory
+      |- Items in the "items" field of a location are available to pick up, not already owned
       |
       |Response Format:
+      |
+      |IMPORTANT: Choose the appropriate response type based on the action:
+      |
+      |TYPE 1 - FULL SCENE (for movement, look, or scene changes):
       |{
+      |  "responseType": "fullScene",
       |  "locationId": "unique_location_id",  // e.g., "dungeon_entrance", "forest_path_1"
       |  "locationName": "Human Readable Name",  // e.g., "Dungeon Entrance", "Forest Path"
-      |  "narrationText": "Brief 2-3 sentence description for the player",
+      |  "narrationText": "Evocative room description following text adventure conventions. First visit: 2-4 sentences with atmosphere and interactive elements. Include object descriptions like 'There is a brass lantern here' for items.",
       |  "imageDescription": "Detailed 2-3 sentence visual description for image generation in $artStyleDescription. Include colors, lighting, atmosphere, architectural details, and visual elements appropriate for the art style.",
       |  "musicDescription": "Detailed atmospheric description for music generation. Include mood, tempo, instruments, and emotional tone.",
       |  "musicMood": "One of: entrance, exploration, combat, victory, dungeon, forest, town, mystery, castle, underwater, temple, boss, stealth, treasure, danger, peaceful",
       |  "exits": [
-      |    {"direction": "north", "locationId": "forest_clearing", "description": "A path leads into the forest"},
-      |    {"direction": "south", "locationId": "village_square", "description": "The village lies behind you"}
+      |    {"direction": "north", "locationId": "forest_clearing", "description": "A winding path disappears into the dark forest"},
+      |    {"direction": "south", "locationId": "village_square", "description": "The cobblestone road leads back to the village"}
       |  ],
-      |  "items": ["torch", "old_key"],  // Optional: items in this location
-      |  "npcs": ["old_wizard", "guard"]  // Optional: NPCs in this location
+      |  "items": ["brass_lantern", "mysterious_key"],  // Items available in this location to pick up
+      |  "npcs": ["old_wizard", "guard"]  // NPCs present in this location
+      |}
+      |
+      |TYPE 2 - SIMPLE RESPONSE (for examine, help, inventory, interactions without scene change):
+      |{
+      |  "responseType": "simple",
+      |  "narrationText": "The response text without room description. For examine: detailed object description. For help: command list. For inventory: 'You are carrying: ...' etc.",
+      |  "locationId": "current_location_id",  // Keep the same location ID as before
+      |  "actionTaken": "examine/help/inventory/talk/use/etc"  // What action was performed
       |}
       |
       |Rules:
-      |- Keep narrationText under 50 words
+      |- Follow classic text adventure writing conventions throughout
+      |- Use "fullScene" response ONLY for: movement to new location, "look" command, or major scene changes
+      |- Use "simple" response for: examine, help, inventory, talk, use item (without movement), take/drop items
+      |- NarrationText should be 2-4 sentences for first visits, can be briefer for return visits
+      |- Balance evocative prose with clear gameplay information
       |- ImageDescription should be rich and detailed (50-100 words) focusing on visual elements in the $artStyleDescription
       |- IMPORTANT: Always describe scenes specifically for the art style: $artStyleDescription
       |- MusicDescription should evoke the atmosphere and mood (30-50 words)
@@ -51,16 +126,23 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
       |- Track player location, inventory, and game state
       |- Enforce movement restrictions based on exits
       |- Use consistent locationIds when revisiting locations
+      |- Use inventory tools for ALL item management
       |
-      |Special commands:
-      |- "help" - List basic commands but still return JSON
-      |- "hint" - Give hint in narrationText but still return JSON
-      |- "inventory" - List items in narrationText but still return JSON
-      |- "look" - Redescribe current location with full JSON
+      |Special commands and their response types:
+      |- "help" - SIMPLE response: List basic commands
+      |- "hint" - SIMPLE response: Provide contextual hint
+      |- "inventory" or "i" - SIMPLE response: Use list_inventory tool, respond with "You are carrying: ..."
+      |- "look" or "l" - FULL SCENE response: Complete room description
+      |- "examine [object]" or "x [object]" - SIMPLE response: Detailed object examination
+      |- "take [item]" or "get [item]" - SIMPLE response: Use add_inventory_item tool, confirm action
+      |- "drop [item]" - SIMPLE response: Use remove_inventory_item tool, confirm action
+      |- "use [item]" - SIMPLE response unless it causes movement
+      |- "talk to [npc]" - SIMPLE response: NPC dialogue
+      |- Movement commands - FULL SCENE response: Complete new location description
       |""".stripMargin
 
   private val client = LLM.client()
-  private val toolRegistry = new ToolRegistry(Nil)
+  private val toolRegistry = new ToolRegistry(GameTools.allTools)
   private val agent = new Agent(client)
   
   private var currentState: AgentState = _
@@ -71,6 +153,10 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
   
   def initialize(): String = {
     logger.info(s"[$sessionId] Initializing game with theme: $themeDescription")
+    
+    // Clear inventory for new game
+    GameTools.clearInventory()
+    
     val initPrompt = s"Let's begin the adventure! Create an opening scene for this adventure theme: $themeDescription. Start by describing the initial scene where the player begins their journey. Return a complete JSON response."
     currentState = agent.initialize(
       initPrompt,
@@ -142,15 +228,23 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
         currentState = newState
         
         // Try to parse the response as structured JSON
-        val (responseText, sceneOpt) = parseSceneFromResponse(response) match {
-          case Some(scene) =>
+        val (responseText, sceneOpt) = parseResponseData(response) match {
+          case Some(scene: GameScene) =>
+            // Full scene response - update current scene
             currentScene = Some(scene)
             visitedLocations += scene.locationId
-            logger.info(s"[$sessionId] Parsed scene: ${scene.locationId} - ${scene.locationName}")
+            logger.info(s"[$sessionId] Full scene response: ${scene.locationId} - ${scene.locationName}")
             (scene.narrationText, Some(scene))
+            
+          case Some(simple: SimpleResponse) =>
+            // Simple response - keep current scene, just return the text
+            logger.info(s"[$sessionId] Simple response for action: ${simple.actionTaken}")
+            (simple.narrationText, currentScene) // Keep the current scene
+            
           case None =>
+            // Fallback to raw text if parsing fails
             logger.warn(s"[$sessionId] Could not parse structured response, using raw text")
-            (if (response.nonEmpty) response else "No response", None)
+            (if (response.nonEmpty) response else "No response", currentScene)
         }
         
         // Generate audio if requested
@@ -190,7 +284,7 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
   
   def getState: AgentState = currentState
   
-  private def parseSceneFromResponse(response: String): Option[GameScene] = {
+  private def parseResponseData(response: String): Option[GameResponseData] = {
     if (response.isEmpty) return None
     
     try {
@@ -200,10 +294,10 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
       
       if (jsonStart >= 0 && jsonEnd > jsonStart) {
         val jsonStr = response.substring(jsonStart, jsonEnd + 1)
-        GameScene.fromJson(jsonStr) match {
-          case Right(scene) => Some(scene)
+        GameResponseData.fromJson(jsonStr) match {
+          case Right(data) => Some(data)
           case Left(error) =>
-            logger.warn(s"[$sessionId] Failed to parse scene JSON: $error")
+            logger.warn(s"[$sessionId] Failed to parse response JSON: $error")
             None
         }
       } else {
@@ -211,8 +305,15 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
       }
     } catch {
       case e: Exception =>
-        logger.error(s"[$sessionId] Error parsing scene response", e)
+        logger.error(s"[$sessionId] Error parsing response", e)
         None
+    }
+  }
+  
+  private def parseSceneFromResponse(response: String): Option[GameScene] = {
+    parseResponseData(response) match {
+      case Some(scene: GameScene) => Some(scene)
+      case _ => None
     }
   }
   
@@ -382,6 +483,7 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
       currentScene = currentScene,
       visitedLocations = visitedLocations,
       conversationHistory = conversationHistory,
+      inventory = GameTools.getInventory,
       createdAt = createdAt,
       lastSaved = System.currentTimeMillis()
     )
@@ -392,6 +494,7 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
     currentScene = state.currentScene
     visitedLocations = state.visitedLocations
     conversationHistory = state.conversationHistory
+    GameTools.setInventory(state.inventory)
     
     // Reconstruct conversation for the agent
     // We'll create a simplified conversation with just the essential messages
@@ -434,6 +537,6 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
 }
 
 object GameEngine {
-  def create(sessionId: String = "", theme: Option[String] = None, artStyle: Option[String] = None): GameEngine = 
-    new GameEngine(sessionId, theme, artStyle)
+  def create(sessionId: String = "", theme: Option[String] = None, artStyle: Option[String] = None, adventureOutline: Option[AdventureOutline] = None): GameEngine = 
+    new GameEngine(sessionId, theme, artStyle, adventureOutline)
 }

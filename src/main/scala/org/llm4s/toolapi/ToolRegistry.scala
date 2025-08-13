@@ -21,16 +21,40 @@ object ToolCallError {
 /**
  * Registry for tool functions with execution capabilities
  */
-class ToolRegistry(initialTools: Seq[ToolFunction[_, _]]) {
+class ToolRegistry(initialTools: Seq[ToolFunction[_, _]] = Seq.empty) {
 
-  def tools: Seq[ToolFunction[_, _]] = initialTools
+  private val toolsMap = scala.collection.mutable.Map[String, ToolFunction[_, _]]()
+
+  // Initialize with provided tools
+  initialTools.foreach(tool => toolsMap.put(tool.name, tool))
+
+  def tools: Seq[ToolFunction[_, _]] = toolsMap.values.toSeq
+
+  // Add a new tool to the registry
+  def addTool(tool: ToolFunction[_, _]): Unit =
+    toolsMap.put(tool.name, tool)
+
+  // Add multiple tools to the registry
+  def addTools(newTools: Seq[ToolFunction[_, _]]): Unit =
+    newTools.foreach(addTool)
+
+  // Remove a tool from the registry by name
+  def removeTool(name: String): Option[ToolFunction[_, _]] =
+    toolsMap.remove(name)
+
+  // Clear all tools from the registry
+  def clearTools(): Unit =
+    toolsMap.clear()
+
+  // Check if a tool exists in the registry
+  def hasTool(name: String): Boolean = toolsMap.contains(name)
 
   // Get a specific tool by name
-  def getTool(name: String): Option[ToolFunction[_, _]] = tools.find(_.name == name)
+  def getTool(name: String): Option[ToolFunction[_, _]] = toolsMap.get(name)
 
   // Execute a tool call
   def execute(request: ToolCallRequest): Either[ToolCallError, ujson.Value] =
-    tools.find(_.name == request.functionName) match {
+    toolsMap.get(request.functionName) match {
       case Some(tool) =>
         try
           tool.execute(request.arguments)

@@ -138,6 +138,47 @@ object SzorkServer extends cask.Main with cask.Routes {
     )
   }
 
+  @post("/api/game/generate-adventure")
+  def generateAdventure(request: Request) = {
+    logger.info("Generating adventure outline")
+    val json = ujson.read(request.text())
+    
+    val theme = json.obj.get("theme").map { t =>
+      GameTheme(
+        id = t("id").str,
+        name = t("name").str,
+        prompt = t("prompt").str
+      )
+    }
+    
+    val artStyle = json.obj.get("artStyle").map { s =>
+      ArtStyle(
+        id = s("id").str,
+        name = s("name").str
+      )
+    }
+    
+    val themePrompt = theme.map(_.prompt).getOrElse("classic fantasy adventure")
+    val artStyleId = artStyle.map(_.id).getOrElse("fantasy")
+    
+    logger.info(s"Generating adventure for theme: ${theme.map(_.name).getOrElse("default")}")
+    
+    AdventureGenerator.generateAdventureOutline(themePrompt, artStyleId) match {
+      case Right(outline) =>
+        logger.info(s"Adventure outline generated: ${outline.title}")
+        ujson.Obj(
+          "status" -> "success",
+          "outline" -> AdventureGenerator.outlineToJson(outline)
+        )
+      case Left(error) =>
+        logger.error(s"Failed to generate adventure outline: $error")
+        ujson.Obj(
+          "status" -> "error",
+          "message" -> error
+        )
+    }
+  }
+  
   @post("/api/game/start")
   def startGame(request: Request) = {
     logger.info("Starting new game session")
@@ -160,9 +201,51 @@ object SzorkServer extends cask.Main with cask.Routes {
       )
     }
     
-    logger.info(s"Starting game with theme: ${theme.map(_.name).getOrElse("default")}, style: ${artStyle.map(_.name).getOrElse("default")}")
+    // Parse adventure outline if provided
+    val adventureOutline = json.obj.get("outline").flatMap { outlineJson =>
+      try {
+        Some(AdventureOutline(
+          title = outlineJson("title").str,
+          mainQuest = outlineJson("mainQuest").str,
+          subQuests = outlineJson("subQuests").arr.map(_.str).toList,
+          keyLocations = outlineJson("keyLocations").arr.map { loc =>
+            LocationOutline(
+              id = loc("id").str,
+              name = loc("name").str,
+              description = loc("description").str,
+              significance = loc("significance").str
+            )
+          }.toList,
+          importantItems = outlineJson("importantItems").arr.map { item =>
+            ItemOutline(
+              name = item("name").str,
+              description = item("description").str,
+              purpose = item("purpose").str
+            )
+          }.toList,
+          keyCharacters = outlineJson("keyCharacters").arr.map { char =>
+            CharacterOutline(
+              name = char("name").str,
+              role = char("role").str,
+              description = char("description").str
+            )
+          }.toList,
+          adventureArc = outlineJson("adventureArc").str,
+          specialMechanics = outlineJson.obj.get("specialMechanics").flatMap {
+            case ujson.Null => None
+            case s => Some(s.str)
+          }
+        ))
+      } catch {
+        case e: Exception =>
+          logger.warn(s"Failed to parse adventure outline: ${e.getMessage}")
+          None
+      }
+    }
     
-    val engine = GameEngine.create(sessionId, theme.map(_.prompt), artStyle.map(_.id))
+    logger.info(s"Starting game with theme: ${theme.map(_.name).getOrElse("default")}, style: ${artStyle.map(_.name).getOrElse("default")}, outline: ${adventureOutline.map(_.title).getOrElse("none")}")
+    
+    val engine = new GameEngine(sessionId, theme.map(_.prompt), artStyle.map(_.id), adventureOutline)
     val initialMessage = engine.initialize()
     
     val session = GameSession(
@@ -655,7 +738,7 @@ object SzorkServer extends cask.Main with cask.Routes {
       case Right(gameState) =>
         // Create new session for loaded game
         val sessionId = java.util.UUID.randomUUID().toString
-        val engine = GameEngine.create(sessionId, gameState.theme.map(_.prompt), gameState.artStyle.map(_.id))
+        val engine = GameEngine.create(sessionId, gameState.theme.map(_.prompt), gameState.artStyle.map(_.id), None)
         
         // Restore the game state
         engine.restoreGameState(gameState)

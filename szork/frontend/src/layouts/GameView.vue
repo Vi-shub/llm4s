@@ -5,13 +5,12 @@
       <div class="intro-content">
         <img src="/SZork_intro.webp" alt="Welcome to Szork" class="intro-image" />
         <v-btn 
-          color="primary" 
           size="x-large" 
-          class="begin-button"
+          class="begin-button begin-adventure-btn"
           @click="beginSetup"
-          elevation="8"
         >
           Begin Your Adventure
+          <v-icon end>mdi-chevron-right</v-icon>
         </v-btn>
       </div>
     </div>
@@ -217,6 +216,7 @@ export default defineComponent({
     const setupStarted = ref(false);
     const adventureTheme = ref<any>(null);
     const artStyle = ref<any>(null);
+    const adventureOutline = ref<any>(null);
     const backgroundMusicEnabled = ref(true);
     const backgroundMusicVolume = ref(0.3);
     const currentBackgroundMusic = ref<HTMLAudioElement | null>(null);
@@ -242,9 +242,10 @@ export default defineComponent({
       setupStarted.value = true;
     };
     
-    const onAdventureReady = (config: { theme: any, style: any }) => {
+    const onAdventureReady = (config: { theme: any, style: any, outline?: any }) => {
       adventureTheme.value = config.theme;
       artStyle.value = config.style;
+      adventureOutline.value = config.outline || null;
       gameStarted.value = true;
       setupStarted.value = false;
       nextTick(() => {
@@ -332,10 +333,11 @@ export default defineComponent({
     const startGame = async () => {
       try {
         loading.value = true;
-        log("Starting game with theme:", adventureTheme.value, "and style:", artStyle.value);
+        log("Starting game with theme:", adventureTheme.value, "and style:", artStyle.value, "and outline:", adventureOutline.value);
         const response = await axios.post("/api/game/start", {
           theme: adventureTheme.value,
-          artStyle: artStyle.value
+          artStyle: artStyle.value,
+          outline: adventureOutline.value
         });
         log("Game start response:", response.data);
         sessionId.value = response.data.sessionId;
@@ -1012,10 +1014,68 @@ export default defineComponent({
 
 .begin-button {
   font-size: 1.2rem;
-  padding: 1.5rem 3rem;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  animation: pulse 2s ease-in-out infinite;
+  animation: pulse-shadow 2s ease-in-out infinite;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+
+.begin-adventure-btn {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border: 2px solid #ffffff !important;
+  border-radius: 8px !important;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.5px;
+  padding: 0 32px !important;
+  min-height: 56px !important;
+  height: 56px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  box-shadow: 
+    inset 2px 2px 4px rgba(255, 255, 255, 0.2),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.begin-adventure-btn:hover {
+  background-color: #1a1a1a !important;
+  border-color: #ffffff !important;
+  box-shadow: 
+    inset 2px 2px 6px rgba(255, 255, 255, 0.3),
+    inset -2px -2px 6px rgba(0, 0, 0, 0.6),
+    0 6px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.begin-adventure-btn:active {
+  box-shadow: 
+    inset 2px 2px 4px rgba(0, 0, 0, 0.6),
+    inset -2px -2px 4px rgba(255, 255, 255, 0.1),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+  transform: translateY(0);
+}
+
+@keyframes pulse-shadow {
+  0%, 100% {
+    box-shadow: 
+      inset 2px 2px 4px rgba(255, 255, 255, 0.2),
+      inset -2px -2px 4px rgba(0, 0, 0, 0.5),
+      0 4px 8px rgba(0, 0, 0, 0.3),
+      0 0 20px rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow: 
+      inset 2px 2px 4px rgba(255, 255, 255, 0.2),
+      inset -2px -2px 4px rgba(0, 0, 0, 0.5),
+      0 4px 8px rgba(0, 0, 0, 0.3),
+      0 0 40px rgba(255, 255, 255, 0.4);
+  }
 }
 
 @keyframes fadeIn {
