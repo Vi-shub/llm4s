@@ -150,6 +150,9 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
   private var visitedLocations: Set[String] = Set.empty
   private var conversationHistory: List[ConversationEntry] = List.empty
   private val createdAt: Long = System.currentTimeMillis()
+  private var sessionStartTime: Long = System.currentTimeMillis()
+  private var totalPlayTime: Long = 0L  // Accumulated play time from previous sessions
+  private var adventureTitle: Option[String] = adventureOutline.map(_.title)
   
   def initialize(): String = {
     logger.info(s"[$sessionId] Initializing game with theme: $themeDescription")
@@ -157,7 +160,7 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
     // Clear inventory for new game
     GameTools.clearInventory()
     
-    val initPrompt = s"Let's begin the adventure! Create an opening scene for this adventure theme: $themeDescription. Start by describing the initial scene where the player begins their journey. Return a complete JSON response."
+    val initPrompt = s"Generate the opening scene for the adventure. The player is just beginning their journey. Create a fullScene JSON response with the starting location, following the text adventure conventions specified in your instructions."
     currentState = agent.initialize(
       initPrompt,
       toolRegistry,
@@ -476,6 +479,7 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
   
   // State extraction for persistence
   def getGameState(gameId: String, gameTheme: Option[GameTheme], gameArtStyle: Option[ArtStyle]): GameState = {
+    val currentSessionTime = System.currentTimeMillis() - sessionStartTime
     GameState(
       gameId = gameId,
       theme = gameTheme,
@@ -485,7 +489,10 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
       conversationHistory = conversationHistory,
       inventory = GameTools.getInventory,
       createdAt = createdAt,
-      lastSaved = System.currentTimeMillis()
+      lastSaved = System.currentTimeMillis(),
+      lastPlayed = System.currentTimeMillis(),
+      totalPlayTime = totalPlayTime + currentSessionTime,
+      adventureTitle = adventureTitle
     )
   }
   
@@ -495,6 +502,9 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
     visitedLocations = state.visitedLocations
     conversationHistory = state.conversationHistory
     GameTools.setInventory(state.inventory)
+    totalPlayTime = state.totalPlayTime
+    sessionStartTime = System.currentTimeMillis()  // Reset session timer when restoring
+    adventureTitle = state.adventureTitle
     
     // Reconstruct conversation for the agent
     // We'll create a simplified conversation with just the essential messages
@@ -533,6 +543,12 @@ class GameEngine(sessionId: String = "", theme: Option[String] = None, artStyle:
       content = content,
       timestamp = System.currentTimeMillis()
     )
+  }
+  
+  def getAdventureTitle: Option[String] = adventureTitle
+  
+  def setAdventureTitle(title: String): Unit = {
+    adventureTitle = Some(title)
   }
 }
 

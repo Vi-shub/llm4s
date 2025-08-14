@@ -28,47 +28,51 @@
         
         <!-- Theme Selection -->
         <div v-else-if="currentStep === 'theme'" class="setup-step">
-          <h2 class="setup-title">Choose Your Adventure Theme</h2>
+          <div class="setup-header">
+            <h2 class="setup-title">Choose Your Adventure Theme</h2>
+          </div>
           
-          <div class="theme-grid">
-            <div 
-              v-for="theme in predefinedThemes" 
-              :key="theme.id"
-              class="theme-card"
-              :class="{ selected: selectedTheme === theme.id }"
-              @click="selectTheme(theme.id)"
-            >
-              <div class="theme-icon">{{ theme.icon }}</div>
-              <h3 class="theme-name">{{ theme.name }}</h3>
-              <p class="theme-description">{{ theme.description }}</p>
+          <div class="setup-scrollable">
+            <div class="theme-grid">
+              <div 
+                v-for="theme in predefinedThemes" 
+                :key="theme.id"
+                class="theme-card"
+                :class="{ selected: selectedTheme === theme.id }"
+                @click="selectTheme(theme.id)"
+              >
+                <div class="theme-icon">{{ theme.icon }}</div>
+                <h3 class="theme-name">{{ theme.name }}</h3>
+                <p class="theme-description">{{ theme.description }}</p>
+              </div>
+              
+              <!-- Custom Theme Option -->
+              <div 
+                class="theme-card custom-theme"
+                :class="{ selected: selectedTheme === 'custom' }"
+                @click="selectTheme('custom')"
+              >
+                <div class="theme-icon">✨</div>
+                <h3 class="theme-name">Custom Adventure</h3>
+                <p class="theme-description">Create your own unique adventure setting</p>
+              </div>
             </div>
             
-            <!-- Custom Theme Option -->
-            <div 
-              class="theme-card custom-theme"
-              :class="{ selected: selectedTheme === 'custom' }"
-              @click="selectTheme('custom')"
-            >
-              <div class="theme-icon">✨</div>
-              <h3 class="theme-name">Custom Adventure</h3>
-              <p class="theme-description">Create your own unique adventure setting</p>
+            <!-- Custom Theme Input -->
+            <div v-if="selectedTheme === 'custom'" class="custom-theme-input">
+              <v-text-field
+                v-model="customThemeInput"
+                label="Describe your adventure theme"
+                placeholder="e.g., A steampunk airship exploring floating islands..."
+                variant="outlined"
+                :error-messages="customThemeError"
+                :loading="validatingCustomTheme"
+                @blur="validateCustomTheme"
+              />
             </div>
           </div>
           
-          <!-- Custom Theme Input -->
-          <div v-if="selectedTheme === 'custom'" class="custom-theme-input">
-            <v-text-field
-              v-model="customThemeInput"
-              label="Describe your adventure theme"
-              placeholder="e.g., A steampunk airship exploring floating islands..."
-              variant="outlined"
-              :error-messages="customThemeError"
-              :loading="validatingCustomTheme"
-              @blur="validateCustomTheme"
-            />
-          </div>
-          
-          <div class="action-buttons">
+          <div class="action-buttons-sticky">
             <v-btn
               size="large"
               :disabled="!canProceedFromTheme"
@@ -83,31 +87,35 @@
         
         <!-- Art Style Selection -->
         <div v-else-if="currentStep === 'style'" class="setup-step">
-          <h2 class="setup-title">Choose Your Visual Style</h2>
+          <div class="setup-header">
+            <h2 class="setup-title">Choose Your Visual Style</h2>
+          </div>
           
-          <div class="style-grid">
-            <div 
-              v-for="style in artStyles" 
-              :key="style.id"
-              class="style-card"
-              :class="{ selected: selectedStyle === style.id }"
-              @click="selectStyle(style.id)"
-            >
-              <div class="style-preview">
-                <img 
-                  v-if="style.sampleImage" 
-                  :src="style.sampleImage" 
-                  :alt="style.name + ' sample'"
-                  class="style-sample-image"
-                />
-                <div v-else class="style-gradient" :style="{ background: style.gradient }"></div>
+          <div class="setup-scrollable">
+            <div class="style-grid">
+              <div 
+                v-for="style in artStyles" 
+                :key="style.id"
+                class="style-card"
+                :class="{ selected: selectedStyle === style.id }"
+                @click="selectStyle(style.id)"
+              >
+                <div class="style-preview">
+                  <img 
+                    v-if="style.sampleImage" 
+                    :src="style.sampleImage" 
+                    :alt="style.name + ' sample'"
+                    class="style-sample-image"
+                  />
+                  <div v-else class="style-gradient" :style="{ background: style.gradient }"></div>
+                </div>
+                <h3 class="style-name">{{ style.name }}</h3>
+                <p class="style-description">{{ style.description }}</p>
               </div>
-              <h3 class="style-name">{{ style.name }}</h3>
-              <p class="style-description">{{ style.description }}</p>
             </div>
           </div>
           
-          <div class="action-buttons">
+          <div class="action-buttons-sticky">
             <v-btn
               variant="outlined"
               size="large"
@@ -440,36 +448,56 @@ export default defineComponent({
 <style scoped>
 .adventure-setup {
   width: 100%;
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  height: 100vh;
   background: linear-gradient(135deg, #0d0d0d 0%, #1a1a2e 100%);
-  padding: 2rem;
+  overflow: hidden;
+  position: relative;
 }
 
 .setup-content {
   width: 100%;
-  max-width: 1200px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .setup-step {
   animation: fadeIn 0.5s ease-in;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.setup-header {
+  flex-shrink: 0;
+  padding: 1.5rem 2rem 1rem;
+}
+
+.setup-scrollable {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 2rem;
+  padding-bottom: 120px; /* Space for sticky buttons */
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .setup-title {
   text-align: center;
   font-size: 2.5rem;
-  margin-bottom: 3rem;
+  margin: 0;
+  margin-bottom: 1rem;
   color: #fff;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .theme-grid, .style-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 1.5rem;
-  margin-bottom: 3rem;
+  margin-bottom: 2rem;
 }
 
 .theme-card, .style-card {
@@ -546,6 +574,22 @@ export default defineComponent({
   margin-top: 3rem;
 }
 
+.action-buttons-sticky {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: linear-gradient(to top, rgba(13, 13, 13, 0.95), rgba(13, 13, 13, 0.85));
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+}
+
 .fade-enter-active, .fade-leave-active {
   transition: opacity 0.3s ease;
 }
@@ -565,13 +609,68 @@ export default defineComponent({
   }
 }
 
-@media (max-width: 768px) {
+/* Responsive Design */
+@media (max-width: 1024px) {
   .theme-grid, .style-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .setup-header {
+    padding: 1rem 1rem 0.5rem;
+  }
+  
+  .setup-scrollable {
+    padding: 0 1rem;
+    padding-bottom: 100px;
+  }
+  
+  .theme-grid, .style-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.75rem;
   }
   
   .setup-title {
     font-size: 1.8rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .theme-card, .style-card {
+    padding: 1rem;
+  }
+  
+  .theme-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .theme-name, .style-name {
+    font-size: 1.1rem;
+  }
+  
+  .theme-description, .style-description {
+    font-size: 0.85rem;
+  }
+  
+  .action-buttons-sticky {
+    padding: 1rem;
+  }
+  
+  .continue-btn, .begin-adventure-btn {
+    font-size: 0.9rem;
+    padding: 0 16px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .theme-grid, .style-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .theme-card, .style-card {
+    padding: 1.25rem;
   }
 }
 
@@ -617,10 +716,12 @@ export default defineComponent({
 
 .generating-adventure {
   text-align: center;
-  min-height: 400px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  padding: 2rem;
 }
 
 .generation-container {
@@ -734,5 +835,30 @@ export default defineComponent({
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Custom Scrollbar Styling */
+.setup-scrollable::-webkit-scrollbar {
+  width: 8px;
+}
+
+.setup-scrollable::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.setup-scrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.setup-scrollable::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Ensure custom theme input is always visible when selected */
+.custom-theme-input {
+  position: relative;
+  z-index: 10;
 }
 </style>

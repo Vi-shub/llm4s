@@ -22,15 +22,21 @@ case class GameState(
   conversationHistory: List[ConversationEntry],
   inventory: List[String],
   createdAt: Long,
-  lastSaved: Long
+  lastSaved: Long,
+  lastPlayed: Long = System.currentTimeMillis(),
+  totalPlayTime: Long = 0,  // Total play time in milliseconds
+  adventureTitle: Option[String] = None
 )
 
 case class GameMetadata(
   gameId: String,
   theme: String,
   artStyle: String,
+  adventureTitle: String,
   createdAt: Long,
-  lastSaved: Long
+  lastSaved: Long,
+  lastPlayed: Long,
+  totalPlayTime: Long  // Total play time in milliseconds
 )
 
 object GamePersistence {
@@ -90,7 +96,10 @@ object GamePersistence {
         )),
         "inventory" -> state.inventory,
         "createdAt" -> state.createdAt,
-        "lastSaved" -> state.lastSaved
+        "lastSaved" -> state.lastSaved,
+        "lastPlayed" -> state.lastPlayed,
+        "totalPlayTime" -> state.totalPlayTime,
+        "adventureTitle" -> state.adventureTitle.map(ujson.Str(_)).getOrElse(ujson.Null)
       )
       
       // Write to file
@@ -167,7 +176,13 @@ object GamePersistence {
         )).toList,
         inventory = json.obj.get("inventory").map(_.arr.map(_.str).toList).getOrElse(List.empty),
         createdAt = json("createdAt").str.toLong,
-        lastSaved = json("lastSaved").str.toLong
+        lastSaved = json("lastSaved").str.toLong,
+        lastPlayed = json.obj.get("lastPlayed").map(_.num.toLong).getOrElse(json("lastSaved").num.toLong),
+        totalPlayTime = json.obj.get("totalPlayTime").map(_.num.toLong).getOrElse(0L),
+        adventureTitle = json.obj.get("adventureTitle").flatMap {
+          case ujson.Null => None
+          case s => Some(s.str)
+        }.filter(_.nonEmpty)
       )
       
       logger.info(s"Loaded game $gameId from ${filePath.toString}")
@@ -201,13 +216,19 @@ object GamePersistence {
                 case Null => "Unknown"
                 case a => a("name").str
               },
-              createdAt = json("createdAt").str.toLong,
-              lastSaved = json("lastSaved").str.toLong
+              adventureTitle = json.obj.get("adventureTitle").flatMap {
+                case ujson.Null => None
+                case s => Some(s.str)
+              }.filter(_.nonEmpty).getOrElse("Untitled Adventure"),
+              createdAt = json("createdAt").num.toLong,
+              lastSaved = json("lastSaved").num.toLong,
+              lastPlayed = json.obj.get("lastPlayed").map(_.num.toLong).getOrElse(json("lastSaved").num.toLong),
+              totalPlayTime = json.obj.get("totalPlayTime").map(_.num.toLong).getOrElse(0L)
             )
           }.toOption
         }
         .toList
-        .sortBy(-_.lastSaved) // Sort by most recently saved first
+        .sortBy(-_.lastPlayed) // Sort by most recently played first
     } catch {
       case e: Exception =>
         logger.error("Failed to list games", e)

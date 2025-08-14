@@ -15,7 +15,8 @@ case class GameSession(
   artStyle: Option[ArtStyle] = None,
   pendingImages: mutable.Map[Int, Option[String]] = mutable.Map.empty,
   pendingMusic: mutable.Map[Int, Option[(String, String)]] = mutable.Map.empty,  // (base64, mood)
-  autoSaveEnabled: Boolean = true
+  autoSaveEnabled: Boolean = true,
+  imageGenerationEnabled: Boolean = true
 )
 
 case class GameTheme(
@@ -137,6 +138,27 @@ object SzorkServer extends cask.Main with cask.Routes {
       "service" -> "szork-server"
     )
   }
+  
+  @get("/api/games")
+  def listSavedGames() = {
+    logger.info("Listing saved games")
+    val games = GamePersistence.listGames()
+    val gamesJson = games.map { metadata =>
+      ujson.Obj(
+        "gameId" -> metadata.gameId,
+        "title" -> metadata.adventureTitle,
+        "theme" -> metadata.theme,
+        "artStyle" -> metadata.artStyle,
+        "createdAt" -> metadata.createdAt,
+        "lastPlayed" -> metadata.lastPlayed,
+        "totalPlayTime" -> metadata.totalPlayTime
+      )
+    }
+    ujson.Obj(
+      "status" -> "success",
+      "games" -> gamesJson
+    )
+  }
 
   @post("/api/game/generate-adventure")
   def generateAdventure(request: Request) = {
@@ -243,7 +265,10 @@ object SzorkServer extends cask.Main with cask.Routes {
       }
     }
     
-    logger.info(s"Starting game with theme: ${theme.map(_.name).getOrElse("default")}, style: ${artStyle.map(_.name).getOrElse("default")}, outline: ${adventureOutline.map(_.title).getOrElse("none")}")
+    // Parse imageGenerationEnabled preference (default to true)
+    val imageGenerationEnabled = json.obj.get("imageGenerationEnabled").map(_.bool).getOrElse(true)
+    
+    logger.info(s"Starting game with theme: ${theme.map(_.name).getOrElse("default")}, style: ${artStyle.map(_.name).getOrElse("default")}, outline: ${adventureOutline.map(_.title).getOrElse("none")}, imageGeneration: $imageGenerationEnabled")
     
     val engine = new GameEngine(sessionId, theme.map(_.prompt), artStyle.map(_.id), adventureOutline)
     val initialMessage = engine.initialize()
@@ -253,7 +278,8 @@ object SzorkServer extends cask.Main with cask.Routes {
       gameId = gameId,
       engine = engine,
       theme = theme,
-      artStyle = artStyle
+      artStyle = artStyle,
+      imageGenerationEnabled = imageGenerationEnabled
     )
     
     sessions(sessionId) = session
@@ -265,7 +291,8 @@ object SzorkServer extends cask.Main with cask.Routes {
       "gameId" -> gameId,  // Include game ID for frontend routing
       "message" -> initialMessage,
       "status" -> "started",
-      "messageIndex" -> messageIndex
+      "messageIndex" -> messageIndex,
+      "adventureTitle" -> ujson.Str(adventureOutline.map(_.title).getOrElse("Generative Adventuring"))
     )
     
     // Add scene data if available (without revealing location IDs)
@@ -299,8 +326,8 @@ object SzorkServer extends cask.Main with cask.Routes {
         logger.error(s"[$sessionId] Error generating initial audio", e)
     }
     
-    // Check if the initial scene should have an image
-    if (engine.shouldGenerateSceneImage(initialMessage)) {
+    // Check if the initial scene should have an image (and if image generation is enabled)
+    if (session.imageGenerationEnabled && engine.shouldGenerateSceneImage(initialMessage)) {
       result("hasImage") = true
       // Generate image asynchronously for initial scene
       Future {
@@ -336,19 +363,30 @@ object SzorkServer extends cask.Main with cask.Routes {
     val sessionId = json("sessionId").str
     val command = json("command").str
     
+    // Parse imageGenerationEnabled preference if provided
+    val imageGenerationEnabled = json.obj.get("imageGenerationEnabled").map(_.bool)
+    
     logger.info(s"Processing command for session $sessionId: $command")
     
     sessions.get(sessionId) match {
       case Some(session) =>
+        // Update session's imageGenerationEnabled if provided
+        val updatedSession = imageGenerationEnabled match {
+          case Some(enabled) => 
+            val newSession = session.copy(imageGenerationEnabled = enabled)
+            sessions(sessionId) = newSession
+            newSession
+          case None => session
+        }
         logger.debug(s"Running game engine for session $sessionId")
         val startTime = System.currentTimeMillis()
         
-        session.engine.processCommand(command) match {
+        updatedSession.engine.processCommand(command) match {
           case Right(gameResponse) =>
             val processingTime = System.currentTimeMillis() - startTime
             logger.info(s"Command processed successfully for session $sessionId in ${processingTime}ms")
             
-            val messageIndex = session.engine.getMessageCount - 1
+            val messageIndex = updatedSession.engine.getMessageCount - 1
             val result = ujson.Obj(
               "sessionId" -> sessionId,
               "response" -> gameResponse.text,
@@ -374,14 +412,14 @@ object SzorkServer extends cask.Main with cask.Routes {
               result("audio") = audio
             }
             
-            // Check if this is a scene that needs an image
-            if (session.engine.shouldGenerateSceneImage(gameResponse.text)) {
+            // Check if this is a scene that needs an image (and if image generation is enabled)
+            if (updatedSession.imageGenerationEnabled && updatedSession.engine.shouldGenerateSceneImage(gameResponse.text)) {
               result("hasImage") = true
               // Generate image asynchronously
               Future {
                 logger.info(s"Starting async image generation for session $sessionId, message $messageIndex")
-                val imageOpt = session.engine.generateSceneImage(gameResponse.text, Some(session.gameId))
-                session.pendingImages(messageIndex) = imageOpt
+                val imageOpt = updatedSession.engine.generateSceneImage(gameResponse.text, Some(updatedSession.gameId))
+                updatedSession.pendingImages(messageIndex) = imageOpt
                 logger.info(s"Async image generation completed for session $sessionId, message $messageIndex")
               }(imageEC)
             } else {
@@ -389,13 +427,13 @@ object SzorkServer extends cask.Main with cask.Routes {
             }
             
             // Check if this is a scene that needs background music
-            if (session.engine.shouldGenerateBackgroundMusic(gameResponse.text)) {
+            if (updatedSession.engine.shouldGenerateBackgroundMusic(gameResponse.text)) {
               result("hasMusic") = true
               // Generate music asynchronously
               Future {
                 logger.info(s"Starting async music generation for session $sessionId, message $messageIndex")
-                val musicOpt = session.engine.generateBackgroundMusic(gameResponse.text, Some(session.gameId))
-                session.pendingMusic(messageIndex) = musicOpt
+                val musicOpt = updatedSession.engine.generateBackgroundMusic(gameResponse.text, Some(updatedSession.gameId))
+                updatedSession.pendingMusic(messageIndex) = musicOpt
                 logger.info(s"Async music generation completed for session $sessionId, message $messageIndex")
               }(imageEC)
             } else {
@@ -403,13 +441,13 @@ object SzorkServer extends cask.Main with cask.Routes {
             }
             
             // Auto-save if enabled
-            if (session.autoSaveEnabled) {
-              val gameState = session.engine.getGameState(session.gameId, session.theme, session.artStyle)
+            if (updatedSession.autoSaveEnabled) {
+              val gameState = updatedSession.engine.getGameState(updatedSession.gameId, updatedSession.theme, updatedSession.artStyle)
               GamePersistence.saveGame(gameState) match {
                 case Right(_) =>
-                  logger.debug(s"Auto-saved game ${session.gameId}")
+                  logger.debug(s"Auto-saved game ${updatedSession.gameId}")
                 case Left(error) =>
-                  logger.warn(s"Auto-save failed for game ${session.gameId}: $error")
+                  logger.warn(s"Auto-save failed for game ${updatedSession.gameId}: $error")
               }
             }
             
@@ -443,6 +481,9 @@ object SzorkServer extends cask.Main with cask.Routes {
       val sessionId = json("sessionId").str
       val audioBase64 = json("audio").str
       
+      // Parse imageGenerationEnabled preference if provided
+      val imageGenerationEnabled = json.obj.get("imageGenerationEnabled").map(_.bool)
+      
       logger.info(s"Processing audio for session: $sessionId")
       
       // Decode base64 audio
@@ -459,14 +500,22 @@ object SzorkServer extends cask.Main with cask.Routes {
           // Process the transcribed text as a regular command
           sessions.get(sessionId) match {
             case Some(session) =>
+              // Update session's imageGenerationEnabled if provided
+              val updatedSession = imageGenerationEnabled match {
+                case Some(enabled) => 
+                  val newSession = session.copy(imageGenerationEnabled = enabled)
+                  sessions(sessionId) = newSession
+                  newSession
+                case None => session
+              }
               val startTime = System.currentTimeMillis()
               
-              session.engine.processCommand(transcribedText) match {
+              updatedSession.engine.processCommand(transcribedText) match {
                 case Right(gameResponse) =>
                   val processingTime = System.currentTimeMillis() - startTime
                   logger.info(s"Audio command processed successfully for session $sessionId in ${processingTime}ms")
                   
-                  val messageIndex = session.engine.getMessageCount - 1
+                  val messageIndex = updatedSession.engine.getMessageCount - 1
                   val result = ujson.Obj(
                     "sessionId" -> sessionId,
                     "transcription" -> transcribedText,
@@ -493,14 +542,14 @@ object SzorkServer extends cask.Main with cask.Routes {
                     result("audio") = audio
                   }
                   
-                  // Check if this is a scene that needs an image
-                  if (session.engine.shouldGenerateSceneImage(gameResponse.text)) {
+                  // Check if this is a scene that needs an image (and if image generation is enabled)
+                  if (updatedSession.imageGenerationEnabled && updatedSession.engine.shouldGenerateSceneImage(gameResponse.text)) {
                     result("hasImage") = true
                     // Generate image asynchronously
                     Future {
                       logger.info(s"Starting async image generation for session $sessionId, message $messageIndex (audio)")
-                      val imageOpt = session.engine.generateSceneImage(gameResponse.text, Some(session.gameId))
-                      session.pendingImages(messageIndex) = imageOpt
+                      val imageOpt = updatedSession.engine.generateSceneImage(gameResponse.text, Some(updatedSession.gameId))
+                      updatedSession.pendingImages(messageIndex) = imageOpt
                       logger.info(s"Async image generation completed for session $sessionId, message $messageIndex (audio)")
                     }(imageEC)
                   } else {
@@ -508,13 +557,13 @@ object SzorkServer extends cask.Main with cask.Routes {
                   }
                   
                   // Check if this is a scene that needs background music
-                  if (session.engine.shouldGenerateBackgroundMusic(gameResponse.text)) {
+                  if (updatedSession.engine.shouldGenerateBackgroundMusic(gameResponse.text)) {
                     result("hasMusic") = true
                     // Generate music asynchronously
                     Future {
                       logger.info(s"Starting async music generation for session $sessionId, message $messageIndex (audio)")
-                      val musicOpt = session.engine.generateBackgroundMusic(gameResponse.text, Some(session.gameId))
-                      session.pendingMusic(messageIndex) = musicOpt
+                      val musicOpt = updatedSession.engine.generateBackgroundMusic(gameResponse.text, Some(updatedSession.gameId))
+                      updatedSession.pendingMusic(messageIndex) = musicOpt
                       logger.info(s"Async music generation completed for session $sessionId, message $messageIndex (audio)")
                     }(imageEC)
                   } else {
@@ -522,13 +571,13 @@ object SzorkServer extends cask.Main with cask.Routes {
                   }
                   
                   // Auto-save if enabled
-                  if (session.autoSaveEnabled) {
-                    val gameState = session.engine.getGameState(session.gameId, session.theme, session.artStyle)
+                  if (updatedSession.autoSaveEnabled) {
+                    val gameState = updatedSession.engine.getGameState(updatedSession.gameId, updatedSession.theme, updatedSession.artStyle)
                     GamePersistence.saveGame(gameState) match {
                       case Right(_) =>
-                        logger.debug(s"Auto-saved game ${session.gameId} after audio command")
+                        logger.debug(s"Auto-saved game ${updatedSession.gameId} after audio command")
                       case Left(error) =>
-                        logger.warn(s"Auto-save failed for game ${session.gameId}: $error")
+                        logger.warn(s"Auto-save failed for game ${updatedSession.gameId}: $error")
                     }
                   }
                   
