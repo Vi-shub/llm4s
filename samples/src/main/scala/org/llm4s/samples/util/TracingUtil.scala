@@ -1,7 +1,7 @@
 package org.llm4s.samples.util
 
 import org.llm4s.trace.{EnhancedTracing, TraceEvent}
-import org.llm4s.agent.{AgentState, AgentStatus}
+import org.llm4s.agent.AgentState
 import ujson._
 import scala.util.Try
 
@@ -29,7 +29,10 @@ object TracingUtil {
   def traceAgentInitialization(tracing: EnhancedTracing, query: String, tools: Seq[Any]): Unit = {
     tracing.traceEvent(TraceEvent.AgentInitialized(
       query = query,
-      tools = tools.map(tool => tool.asInstanceOf[{def name: String}].name).toVector
+      tools = tools.map {
+        case toolFunction: org.llm4s.toolapi.ToolFunction[_, _] => toolFunction.name
+        case other => other.toString
+      }.toVector
     ))
   }
 
