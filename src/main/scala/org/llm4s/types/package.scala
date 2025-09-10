@@ -555,8 +555,20 @@ package object types {
     override def toString: String = value
   }
 
+  object AgentId {
+    def generate(): AgentId = AgentId(java.util.UUID.randomUUID().toString)
+  }
+
   final case class TeamId(value: String) extends AnyVal {
     override def toString: String = value
+  }
+
+  final case class PlanId(value: String) extends AnyVal {
+    override def toString: String = value
+  }
+
+  object PlanId {
+    def generate(): PlanId = PlanId(java.util.UUID.randomUUID().toString)
   }
 
   type AgentCapabilities   = Set[String]
