@@ -76,29 +76,29 @@ object OrchestrationSamples {
       // Create agents
       val contentRetriever  = createContentRetriever()
       val contentAnalyzer   = createContentAnalyzer()
-      val responseGenerator = createResponseGenerator()
 
       // Add policies to agents
       val retrieverWithRetry  = Policies.withRetry(contentRetriever, maxAttempts = 3, backoff = 500.millis)
       val analyzerWithTimeout = Policies.withTimeout(contentAnalyzer, timeout = 30.seconds)
+      val responseGenerator = createResponseGenerator()
       val generatorWithFallback = Policies.withFallback(
         responseGenerator,
-        Agent.fromFunction("simple-generator")(_ =>
+        Agent.fromFunction[AnalysisResult, FinalResponse]("simple-generator")(_ =>
           Right(FinalResponse("Simple response based on analysis", 0.5, List.empty))
         )
       )
 
       // Build the DAG plan
+      val retrieverNode = Node("retriever", retrieverWithRetry)
+      val analyzerNode = Node("analyzer", analyzerWithTimeout)
+      val generatorNode = Node("generator", generatorWithFallback)
+      
       val plan = Plan.builder
-        .addNode(Node("retriever", retrieverWithRetry))
-        .addNode(Node("analyzer", analyzerWithTimeout))
-        .addNode(Node("generator", generatorWithFallback))
-        .addEdge(
-          Edge("retrieve->analyze", Node("retriever", retrieverWithRetry), Node("analyzer", analyzerWithTimeout))
-        )
-        .addEdge(
-          Edge("analyze->generate", Node("analyzer", analyzerWithTimeout), Node("generator", generatorWithFallback))
-        )
+        .addNode(retrieverNode)
+        .addNode(analyzerNode)
+        .addNode(generatorNode)
+        .addEdge(Edge("retrieve->analyze", retrieverNode, analyzerNode))
+        .addEdge(Edge("analyze->generate", analyzerNode, generatorNode))
         .build
 
       println(s"✅ Plan created with ${plan.nodes.size} nodes and ${plan.edges.size} edges")
