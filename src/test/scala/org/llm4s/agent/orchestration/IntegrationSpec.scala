@@ -1,4 +1,3 @@
-
 package org.llm4s.agent.orchestration
 
 import org.scalatest.flatspec.AnyFlatSpec
@@ -29,32 +28,37 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
 
     // Agent 2: Content analyzer
     val analyzer = Agent.fromFunction[ProcessedDocument, AnalysisResult]("analyzer") { doc =>
-      val sentiment = if (doc.processedContent.contains("good") || doc.processedContent.contains("great")) "positive" else "neutral"
-      val keyTopics = doc.processedContent.split("\\s+").distinct.take(3).toList
+      val sentiment =
+        if (doc.processedContent.contains("good") || doc.processedContent.contains("great")) "positive" else "neutral"
+      val keyTopics  = doc.processedContent.split("\\s+").distinct.take(3).toList
       val confidence = if (doc.wordCount > 10) 0.8 else 0.5
       Right(AnalysisResult(sentiment, keyTopics, confidence))
     }
 
     // Agent 3: Summary generator
     val summarizer = Agent.fromFunction[AnalysisResult, String]("summarizer") { analysis =>
-      Right(s"Summary: ${analysis.sentiment} sentiment with ${analysis.keyTopics.size} key topics (confidence: ${analysis.confidence})")
+      Right(
+        s"Summary: ${analysis.sentiment} sentiment with ${analysis.keyTopics.size} key topics (confidence: ${analysis.confidence})"
+      )
     }
 
     // Agent 4: Result aggregator (combines multiple inputs - simplified for testing)
     val aggregator = Agent.fromFunction[String, WorkflowResult]("aggregator") { summary =>
       // In a real implementation, this would receive multiple inputs
-      Right(WorkflowResult(
-        ProcessedDocument("original", "processed", 5),
-        AnalysisResult("positive", List("topic1", "topic2"), 0.8),
-        summary
-      ))
+      Right(
+        WorkflowResult(
+          ProcessedDocument("original", "processed", 5),
+          AnalysisResult("positive", List("topic1", "topic2"), 0.8),
+          summary
+        )
+      )
     }
 
     // Build the workflow DAG
     val nodePreprocess = Node("preprocess", preprocessor)
-    val nodeAnalyze = Node("analyze", analyzer)
-    val nodeSummarize = Node("summarize", summarizer)
-    val nodeAggregate = Node("aggregate", aggregator)
+    val nodeAnalyze    = Node("analyze", analyzer)
+    val nodeSummarize  = Node("summarize", summarizer)
+    val nodeAggregate  = Node("aggregate", aggregator)
 
     val plan = Plan.builder
       .addNode(nodePreprocess)
@@ -67,7 +71,7 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
       .build
 
     // Execute the workflow
-    val runner = PlanRunner()
+    val runner        = PlanRunner()
     val initialInputs = Map("preprocess" -> Document("This is a great document about machine learning"))
 
     whenReady(runner.execute(plan, initialInputs)) { result =>
@@ -75,10 +79,10 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
       result.isRight shouldBe true
       val outputs = result.getOrElse(Map.empty)
 
-      outputs should contain key "preprocess"
-      outputs should contain key "analyze"
-      outputs should contain key "summarize"
-      outputs should contain key "aggregate"
+      (outputs should contain).key("preprocess")
+      (outputs should contain).key("analyze")
+      (outputs should contain).key("summarize")
+      (outputs should contain).key("aggregate")
 
       val finalResult = outputs("aggregate").asInstanceOf[WorkflowResult]
       finalResult.summary should include("positive sentiment")
@@ -103,8 +107,8 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
     val resilientProcessor = Policies.withRetry(failingProcessor, maxAttempts = 2, backoff = 10.millis)
 
     // Create parallel processing branches
-    val nodeSuccess = Node("success-branch", successfulProcessor)
-    val nodeFailing = Node("failing-branch", resilientProcessor)
+    val nodeSuccess    = Node("success-branch", successfulProcessor)
+    val nodeFailing    = Node("failing-branch", resilientProcessor)
     val nodeAggregator = Node("aggregator", robustAggregator)
 
     val plan = Plan.builder
@@ -137,9 +141,7 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
     }
 
     // Create 4 parallel processing nodes
-    val nodes = (1 to 4).map { i =>
-      Node(s"processor-$i", heavyProcessor)
-    }.toList
+    val nodes = (1 to 4).map(i => Node(s"processor-$i", heavyProcessor)).toList
 
     val plan = Plan.builder
       .addNode(nodes(0))
@@ -176,10 +178,10 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
   "Complex DAG with multiple merge points" should "execute correctly" in {
     // Create a complex workflow: A -> B, A -> C, B -> D, C -> D, D -> E
     val sourceAgent = Agent.fromFunction[String, String]("source")(s => Right(s"source:$s"))
-    val branchB = Agent.fromFunction[String, String]("branchB")(s => Right(s"B:$s"))
-    val branchC = Agent.fromFunction[String, String]("branchC")(s => Right(s"C:$s"))
-    val merger = Agent.fromFunction[String, String]("merger")(s => Right(s"merged:$s"))
-    val finalizer = Agent.fromFunction[String, String]("finalizer")(s => Right(s"final:$s"))
+    val branchB     = Agent.fromFunction[String, String]("branchB")(s => Right(s"B:$s"))
+    val branchC     = Agent.fromFunction[String, String]("branchC")(s => Right(s"C:$s"))
+    val merger      = Agent.fromFunction[String, String]("merger")(s => Right(s"merged:$s"))
+    val finalizer   = Agent.fromFunction[String, String]("finalizer")(s => Right(s"final:$s"))
 
     val nodeA = Node("source", sourceAgent)
     val nodeB = Node("branchB", branchB)
@@ -199,7 +201,7 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
       .addEdge(Edge("D-E", nodeD, nodeE))
       .build
 
-    val runner = PlanRunner()
+    val runner        = PlanRunner()
     val initialInputs = Map("source" -> "test-data")
 
     whenReady(runner.execute(plan, initialInputs)) { result =>
@@ -233,11 +235,9 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
       fallback = Some(fallbackAgent)
     )
 
-    val processingAgent = Agent.fromFunction[String, String]("processor") { data =>
-      Right(s"processed:$data")
-    }
+    val processingAgent = Agent.fromFunction[String, String]("processor")(data => Right(s"processed:$data"))
 
-    val nodeNetwork = Node("network", resilientNetworkAgent)
+    val nodeNetwork   = Node("network", resilientNetworkAgent)
     val nodeProcessor = Node("processor", processingAgent)
 
     val plan = Plan.builder
@@ -246,12 +246,11 @@ class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
       .addEdge(Edge("network-processor", nodeNetwork, nodeProcessor))
       .build
 
-    val runner = PlanRunner()
+    val runner        = PlanRunner()
     val initialInputs = Map("network" -> "request-data")
 
     networkCallCount = 0 // Reset counter
     whenReady(runner.execute(plan, initialInputs), timeout(5.seconds)) { result =>
-
       result.isRight shouldBe true
       val outputs = result.getOrElse(Map.empty)
 

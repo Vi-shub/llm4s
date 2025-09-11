@@ -46,10 +46,10 @@ class PlanRunnerSpec extends AnyFlatSpec with Matchers with ScalaFutures {
     whenReady(runner.execute(plan, initialInputs)) { result =>
       result.isRight shouldBe true
       val outputs = result.getOrElse(Map.empty)
-      
-      outputs should contain key "processor"
-      outputs should contain key "summarizer"
-      
+
+      (outputs should contain).key("processor")
+      (outputs should contain).key("summarizer")
+
       val finalOutput = outputs("summarizer").asInstanceOf[FinalOutput]
       finalOutput.summary should include("processed: hello world")
       finalOutput.success shouldBe true
@@ -61,7 +61,7 @@ class PlanRunnerSpec extends AnyFlatSpec with Matchers with ScalaFutures {
     val processor1 = Agent.fromFunction[InputData, ProcessedData]("processor1") { input =>
       Right(ProcessedData(s"path1: ${input.value}", input.value.length))
     }
-    
+
     val processor2 = Agent.fromFunction[InputData, ProcessedData]("processor2") { input =>
       Right(ProcessedData(s"path2: ${input.value}", input.value.length))
     }
@@ -82,14 +82,14 @@ class PlanRunnerSpec extends AnyFlatSpec with Matchers with ScalaFutures {
     whenReady(runner.execute(plan, initialInputs)) { result =>
       result.isRight shouldBe true
       val outputs = result.getOrElse(Map.empty)
-      
+
       outputs should have size 2
-      outputs should contain key "proc1"
-      outputs should contain key "proc2"
-      
+      (outputs should contain).key("proc1")
+      (outputs should contain).key("proc2")
+
       val output1 = outputs("proc1").asInstanceOf[ProcessedData]
       val output2 = outputs("proc2").asInstanceOf[ProcessedData]
-      
+
       output1.result should include("path1: data1")
       output2.result should include("path2: data2")
     }
@@ -111,7 +111,9 @@ class PlanRunnerSpec extends AnyFlatSpec with Matchers with ScalaFutures {
 
     whenReady(runner.execute(invalidPlan, initialInputs)) { result =>
       result.isLeft shouldBe true
-      result.swap.getOrElse(throw new RuntimeException("Expected Left")).shouldBe(a[OrchestrationError.PlanValidationError])
+      result.swap
+        .getOrElse(throw new RuntimeException("Expected Left"))
+        .shouldBe(a[OrchestrationError.PlanValidationError])
     }
   }
 
@@ -146,7 +148,9 @@ class PlanRunnerSpec extends AnyFlatSpec with Matchers with ScalaFutures {
 
     whenReady(runner.execute(plan, initialInputs)) { result =>
       result.isLeft shouldBe true
-      result.swap.getOrElse(throw new RuntimeException("Expected Left")).shouldBe(a[OrchestrationError.NodeExecutionError])
+      result.swap
+        .getOrElse(throw new RuntimeException("Expected Left"))
+        .shouldBe(a[OrchestrationError.NodeExecutionError])
     }
   }
 
@@ -155,10 +159,13 @@ class PlanRunnerSpec extends AnyFlatSpec with Matchers with ScalaFutures {
     val nodeA = Node("source", Agent.fromFunction[InputData, String]("source")(d => Right(d.value)))
     val nodeB = Node("pathB", Agent.fromFunction[String, String]("pathB")(s => Right(s"B:$s")))
     val nodeC = Node("pathC", Agent.fromFunction[String, String]("pathC")(s => Right(s"C:$s")))
-    val nodeD = Node("merger", Agent.fromFunction[String, String]("merger") { s =>
-      // This is a simplification - in reality we'd need both B and C outputs
-      Right(s"merged:$s")
-    })
+    val nodeD = Node(
+      "merger",
+      Agent.fromFunction[String, String]("merger") { s =>
+        // This is a simplification - in reality we'd need both B and C outputs
+        Right(s"merged:$s")
+      }
+    )
 
     val plan = Plan.builder
       .addNode(nodeA)
@@ -175,12 +182,12 @@ class PlanRunnerSpec extends AnyFlatSpec with Matchers with ScalaFutures {
     whenReady(runner.execute(plan, initialInputs)) { result =>
       result.isRight shouldBe true
       val outputs = result.getOrElse(Map.empty)
-      
-      outputs should contain key "source"
-      outputs should contain key "pathB"
-      outputs should contain key "pathC"
-      outputs should contain key "merger"
-      
+
+      (outputs should contain).key("source")
+      (outputs should contain).key("pathB")
+      (outputs should contain).key("pathC")
+      (outputs should contain).key("merger")
+
       outputs("merger").asInstanceOf[String] should include("merged:B:test")
     }
   }
@@ -193,8 +200,8 @@ class PlanRunnerSpec extends AnyFlatSpec with Matchers with ScalaFutures {
       }
     }
 
-    val node = Node("slow", slowAgent)
-    val plan = Plan.builder.addNode(node).build
+    val node          = Node("slow", slowAgent)
+    val plan          = Plan.builder.addNode(node).build
     val initialInputs = Map("slow" -> InputData("test"))
 
     val startTime = System.currentTimeMillis()
