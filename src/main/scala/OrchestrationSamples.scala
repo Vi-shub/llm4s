@@ -7,7 +7,7 @@ import scala.util.{ Try, Success, Failure }
 
 /**
  * LLM4S Multi-Agent Orchestration Samples
- * 
+ *
  * This module demonstrates Phase 1 orchestration capabilities:
  * - Typed Agent[I, O] contracts with LLM4S patterns
  * - DAG construction with compile-time type safety
@@ -24,7 +24,7 @@ object OrchestrationSamples {
   case class AnalysisResult(summary: String, keyPoints: List[String], sentiment: String)
   case class FinalResponse(answer: String, confidence: Double, sources: List[String])
 
-  def createContentRetriever(): Agent[UserQuery, RetrievedContent] = {
+  def createContentRetriever(): Agent[UserQuery, RetrievedContent] =
     Agent.fromFunction("content-retriever") { query =>
       // Simulate content retrieval
       val docs = List(
@@ -35,35 +35,34 @@ object OrchestrationSamples {
       val sources = List("source1.pdf", "source2.pdf", "source3.pdf")
       Right(RetrievedContent(docs, sources))
     }
-  }
 
-  def createContentAnalyzer(): Agent[RetrievedContent, AnalysisResult] = {
+  def createContentAnalyzer(): Agent[RetrievedContent, AnalysisResult] =
     Agent.fromFunction("content-analyzer") { content =>
       if (content.documents.isEmpty) {
         Left(OrchestrationError.NodeExecutionError("analyzer", "content-analyzer", "No documents to analyze"))
       } else {
         // Simulate content analysis
-        val summary = s"Analysis of ${content.documents.size} documents reveals key insights..."
+        val summary   = s"Analysis of ${content.documents.size} documents reveals key insights..."
         val keyPoints = List("Point 1: Important finding", "Point 2: Supporting evidence", "Point 3: Conclusion")
         val sentiment = "positive"
         Right(AnalysisResult(summary, keyPoints, sentiment))
       }
     }
-  }
 
-  def createResponseGenerator(): Agent[AnalysisResult, FinalResponse] = {
+  def createResponseGenerator(): Agent[AnalysisResult, FinalResponse] =
     Agent.fromFuture("response-generator") { analysis =>
       // Simulate async response generation
       Future {
         Thread.sleep(100) // Simulate processing time
-        Right(FinalResponse(
-          s"Based on the analysis: ${analysis.summary}. Key points: ${analysis.keyPoints.mkString(", ")}",
-          0.85,
-          List("aggregated-sources")
-        ))
+        Right(
+          FinalResponse(
+            s"Based on the analysis: ${analysis.summary}. Key points: ${analysis.keyPoints.mkString(", ")}",
+            0.85,
+            List("aggregated-sources")
+          )
+        )
       }(ExecutionContext.global)
     }
-  }
 
   def demoBasicDAG(): Unit = {
     println("🤖 LLM4S Multi-Agent Orchestration - Basic DAG Demo")
@@ -73,52 +72,53 @@ object OrchestrationSamples {
 
     Try {
       println("📋 Creating execution plan...")
-      
+
       // Create agents
-      val contentRetriever = createContentRetriever()
-      val contentAnalyzer = createContentAnalyzer()
+      val contentRetriever  = createContentRetriever()
+      val contentAnalyzer   = createContentAnalyzer()
       val responseGenerator = createResponseGenerator()
-      
+
       // Add policies to agents
-      val retrieverWithRetry = Policies.withRetry(contentRetriever, maxAttempts = 3, backoff = 500.millis)
+      val retrieverWithRetry  = Policies.withRetry(contentRetriever, maxAttempts = 3, backoff = 500.millis)
       val analyzerWithTimeout = Policies.withTimeout(contentAnalyzer, timeout = 30.seconds)
-      val generatorWithFallback = Policies.withFallback(responseGenerator, 
-        Agent.fromFunction("simple-generator")(_ => 
+      val generatorWithFallback = Policies.withFallback(
+        responseGenerator,
+        Agent.fromFunction("simple-generator")(_ =>
           Right(FinalResponse("Simple response based on analysis", 0.5, List.empty))
         )
       )
-      
+
       // Build the DAG plan
       val plan = Plan.builder
         .addNode(Node("retriever", retrieverWithRetry))
-        .addNode(Node("analyzer", analyzerWithTimeout))  
+        .addNode(Node("analyzer", analyzerWithTimeout))
         .addNode(Node("generator", generatorWithFallback))
-        .addEdge(Edge("retrieve->analyze", 
-          Node("retriever", retrieverWithRetry), 
-          Node("analyzer", analyzerWithTimeout)))
-        .addEdge(Edge("analyze->generate",
-          Node("analyzer", analyzerWithTimeout),
-          Node("generator", generatorWithFallback)))
+        .addEdge(
+          Edge("retrieve->analyze", Node("retriever", retrieverWithRetry), Node("analyzer", analyzerWithTimeout))
+        )
+        .addEdge(
+          Edge("analyze->generate", Node("analyzer", analyzerWithTimeout), Node("generator", generatorWithFallback))
+        )
         .build
 
       println(s"✅ Plan created with ${plan.nodes.size} nodes and ${plan.edges.size} edges")
-      
+
       // Validate the plan
       plan.validate match {
-        case Left(error) => 
+        case Left(error) =>
           println(s"❌ Plan validation failed: $error")
           throw new RuntimeException(error)
-        case Right(_) => 
+        case Right(_) =>
           println("✅ Plan validation successful")
       }
-      
+
       // Show execution order
       plan.topologicalOrder match {
         case Left(error) => println(s"❌ Topological sort failed: $error")
-        case Right(order) => 
+        case Right(order) =>
           println(s"📋 Execution order: ${order.map(_.id).mkString(" -> ")}")
       }
-      
+
       // Show parallel batches
       plan.getParallelBatches match {
         case Left(error) => println(s"❌ Batch creation failed: $error")
@@ -128,19 +128,19 @@ object OrchestrationSamples {
             println(s"   Batch ${index + 1}: ${batch.map(_.id).mkString(", ")}")
           }
       }
-      
+
       // Execute the plan
       println("\n🚀 Executing plan...")
-      
-      val userQuery = UserQuery("What are the benefits of functional programming?")
+
+      val userQuery     = UserQuery("What are the benefits of functional programming?")
       val initialInputs = Map("retriever" -> userQuery)
-      
-      val runner = PlanRunner()
+
+      val runner        = PlanRunner()
       val resultsFuture = runner.execute(plan, initialInputs)
-      
+
       // Wait for completion and handle results
       val results = Await.result(resultsFuture, 30.seconds)
-      
+
       results match {
         case Right(outputs) =>
           println("✅ Execution completed successfully!")
@@ -148,11 +148,11 @@ object OrchestrationSamples {
           outputs.foreach { case (nodeId, result) =>
             println(s"   $nodeId: ${result.toString.take(100)}...")
           }
-          
+
         case Left(error) =>
           println(s"❌ Execution failed: $error")
       }
-      
+
     } match {
       case Success(_) =>
         println("\n" + "=" * 60)
@@ -178,38 +178,36 @@ object OrchestrationSamples {
       val retriever = Agent.fromFunction[Query, Documents]("rag-retriever") { query =>
         Right(Documents(List(s"Doc1 about ${query.text}", s"Doc2 about ${query.text}")))
       }
-      
+
       val generator = Agent.fromFunction[Documents, GeneratedResponse]("rag-generator") { docs =>
         Right(GeneratedResponse(s"Generated response from ${docs.items.size} documents", docs.items))
       }
-      
+
       // Build simple 2-node pipeline
       val plan = Plan.builder
         .addNode(Node("retrieve", retriever))
         .addNode(Node("generate", generator))
-        .addEdge(Edge("retrieve->generate", 
-          Node("retrieve", retriever), 
-          Node("generate", generator)))
+        .addEdge(Edge("retrieve->generate", Node("retrieve", retriever), Node("generate", generator)))
         .build
-      
+
       println("📋 RAG plan created with 2 nodes")
-      
-      val runner = PlanRunner()
+
+      val runner        = PlanRunner()
       val initialInputs = Map("retrieve" -> Query("machine learning"))
-      
+
       val resultsFuture = runner.execute(plan, initialInputs)
-      val results = Await.result(resultsFuture, 30.seconds)
-      
+      val results       = Await.result(resultsFuture, 30.seconds)
+
       results match {
-        case Right(outputs) => 
+        case Right(outputs) =>
           println(s"✅ RAG Pipeline completed!")
           outputs.foreach { case (nodeId, result) =>
             println(s"   $nodeId: $result")
           }
-        case Left(error) => 
+        case Left(error) =>
           println(s"❌ RAG Pipeline failed: $error")
       }
-      
+
     } match {
       case Success(_) =>
         println("=" * 40)
@@ -238,7 +236,7 @@ object OrchestrationSamples {
           Right(TestOutput(s"Success: ${input.value}"))
         }
       }
-      
+
       // Create a slow agent
       val slowAgent = Agent.fromFuture[TestInput, TestOutput]("slow-agent") { input =>
         Future {
@@ -246,30 +244,29 @@ object OrchestrationSamples {
           Right(TestOutput(s"Slow result: ${input.value}"))
         }
       }
-      
+
       // Apply policies
       val retriableAgent = Policies.withRetry(flakyAgent, maxAttempts = 5, backoff = 100.millis)
-      val timeoutAgent = Policies.withTimeout(slowAgent, timeout = 1.second) // Will timeout
-      val fallbackAgent = Policies.withFallback(timeoutAgent,
-        Agent.fromFunction[TestInput, TestOutput]("fallback")(_ => 
-          Right(TestOutput("Fallback response"))
-        )
+      val timeoutAgent   = Policies.withTimeout(slowAgent, timeout = 1.second) // Will timeout
+      val fallbackAgent = Policies.withFallback(
+        timeoutAgent,
+        Agent.fromFunction[TestInput, TestOutput]("fallback")(_ => Right(TestOutput("Fallback response")))
       )
-      
+
       println("🔄 Testing retry policy...")
       val retryResult = retriableAgent.execute(TestInput("retry-test"))
       Await.result(retryResult, 10.seconds) match {
         case Right(output) => println(s"   ✅ Retry succeeded: ${output.result}")
-        case Left(error) => println(s"   ❌ Retry failed: $error")
+        case Left(error)   => println(s"   ❌ Retry failed: $error")
       }
-      
+
       println("⏱️ Testing timeout + fallback policy...")
       val fallbackResult = fallbackAgent.execute(TestInput("timeout-test"))
       Await.result(fallbackResult, 5.seconds) match {
         case Right(output) => println(s"   ✅ Fallback worked: ${output.result}")
-        case Left(error) => println(s"   ❌ Fallback failed: $error")
+        case Left(error)   => println(s"   ❌ Fallback failed: $error")
       }
-      
+
     } match {
       case Success(_) =>
         println("=" * 40)
@@ -283,14 +280,14 @@ object OrchestrationSamples {
   def main(args: Array[String]): Unit = {
     println("🚀 LLM4S Orchestration Samples")
     println("=" * 50)
-    
+
     // Run all demos
     demoBasicDAG()
     println()
     demoSimpleRAG()
     println()
     demoPolicyIntegration()
-    
+
     println("\n🎉 All orchestration samples completed!")
   }
 }

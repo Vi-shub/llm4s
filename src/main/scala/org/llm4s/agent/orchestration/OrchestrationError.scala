@@ -17,9 +17,9 @@ object OrchestrationError {
     planId: Option[String],
     validationFailures: List[String]
   ) extends OrchestrationError {
-    
+
     override val context: Map[String, String] = Map(
-      "component" -> "plan-validation",
+      "component"    -> "plan-validation",
       "failureCount" -> validationFailures.size.toString
     ) ++ planId.map("planId" -> _)
   }
@@ -27,10 +27,10 @@ object OrchestrationError {
   object PlanValidationError {
     def apply(message: String): PlanValidationError =
       new PlanValidationError(s"Plan validation failed: $message", None, List.empty)
-      
+
     def apply(message: String, planId: String): PlanValidationError =
       new PlanValidationError(s"Plan validation failed: $message", Some(planId), List.empty)
-      
+
     def apply(failures: List[String], planId: Option[String]): PlanValidationError =
       new PlanValidationError(
         s"Plan validation failed with ${failures.size} errors: ${failures.mkString(", ")}",
@@ -49,11 +49,11 @@ object OrchestrationError {
     cause: Option[Throwable],
     recoverable: Boolean
   ) extends OrchestrationError {
-    
+
     override val context: Map[String, String] = Map(
-      "component" -> "node-execution",
-      "nodeId" -> nodeId,
-      "nodeName" -> nodeName,
+      "component"   -> "node-execution",
+      "nodeId"      -> nodeId,
+      "nodeName"    -> nodeName,
       "recoverable" -> recoverable.toString
     ) ++ cause.map(ex => "cause" -> ex.getClass.getSimpleName)
   }
@@ -61,15 +61,27 @@ object OrchestrationError {
   object NodeExecutionError {
     def apply(nodeId: String, nodeName: String, message: String): NodeExecutionError =
       new NodeExecutionError(s"Node execution failed [$nodeId:$nodeName]: $message", nodeId, nodeName, None, true)
-      
+
     def apply(nodeId: String, nodeName: String, message: String, cause: Throwable): NodeExecutionError =
-      new NodeExecutionError(s"Node execution failed [$nodeId:$nodeName]: $message", nodeId, nodeName, Some(cause), true)
-      
+      new NodeExecutionError(
+        s"Node execution failed [$nodeId:$nodeName]: $message",
+        nodeId,
+        nodeName,
+        Some(cause),
+        true
+      )
+
     def nonRecoverable(nodeId: String, nodeName: String, message: String): NodeExecutionError =
       new NodeExecutionError(s"Node execution failed [$nodeId:$nodeName]: $message", nodeId, nodeName, None, false)
-      
+
     def nonRecoverable(nodeId: String, nodeName: String, message: String, cause: Throwable): NodeExecutionError =
-      new NodeExecutionError(s"Node execution failed [$nodeId:$nodeName]: $message", nodeId, nodeName, Some(cause), false)
+      new NodeExecutionError(
+        s"Node execution failed [$nodeId:$nodeName]: $message",
+        nodeId,
+        nodeName,
+        Some(cause),
+        false
+      )
   }
 
   /**
@@ -82,25 +94,25 @@ object OrchestrationError {
     failedNode: Option[String],
     cause: Option[Throwable]
   ) extends OrchestrationError {
-    
+
     override val context: Map[String, String] = Map(
-      "component" -> "plan-execution",
+      "component"         -> "plan-execution",
       "executedNodeCount" -> executedNodes.size.toString
-    ) ++ planId.map("planId" -> _) ++ 
-         failedNode.map("failedNode" -> _) ++
-         cause.map(ex => "cause" -> ex.getClass.getSimpleName)
+    ) ++ planId.map("planId" -> _) ++
+      failedNode.map("failedNode" -> _) ++
+      cause.map(ex => "cause" -> ex.getClass.getSimpleName)
   }
 
   object PlanExecutionError {
     def apply(message: String): PlanExecutionError =
       new PlanExecutionError(s"Plan execution failed: $message", None, List.empty, None, None)
-      
+
     def apply(message: String, planId: String): PlanExecutionError =
       new PlanExecutionError(s"Plan execution failed: $message", Some(planId), List.empty, None, None)
-      
+
     def withCause(message: String, cause: Throwable): PlanExecutionError =
       new PlanExecutionError(s"Plan execution failed: $message", None, List.empty, None, Some(cause))
-      
+
     def withCause(message: String, cause: Throwable, planId: String): PlanExecutionError =
       new PlanExecutionError(s"Plan execution failed: $message", Some(planId), List.empty, None, Some(cause))
   }
@@ -115,13 +127,13 @@ object OrchestrationError {
     expectedType: String,
     actualType: String
   ) extends OrchestrationError {
-    
+
     override val context: Map[String, String] = Map(
-      "component" -> "type-validation",
-      "sourceNode" -> sourceNode,
-      "targetNode" -> targetNode,
+      "component"    -> "type-validation",
+      "sourceNode"   -> sourceNode,
+      "targetNode"   -> targetNode,
       "expectedType" -> expectedType,
-      "actualType" -> actualType
+      "actualType"   -> actualType
     )
   }
 
@@ -144,7 +156,7 @@ object OrchestrationError {
     agentName: String,
     timeoutMs: Long
   ) extends OrchestrationError {
-    
+
     override val context: Map[String, String] = Map(
       "component" -> "agent-timeout",
       "agentName" -> agentName,
