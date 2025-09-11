@@ -74,13 +74,13 @@ object OrchestrationSamples {
       println("📋 Creating execution plan...")
 
       // Create agents
-      val contentRetriever  = createContentRetriever()
-      val contentAnalyzer   = createContentAnalyzer()
+      val contentRetriever = createContentRetriever()
+      val contentAnalyzer  = createContentAnalyzer()
 
       // Add policies to agents
       val retrieverWithRetry  = Policies.withRetry(contentRetriever, maxAttempts = 3, backoff = 500.millis)
       val analyzerWithTimeout = Policies.withTimeout(contentAnalyzer, timeout = 30.seconds)
-      val responseGenerator = createResponseGenerator()
+      val responseGenerator   = createResponseGenerator()
       val generatorWithFallback = Policies.withFallback(
         responseGenerator,
         Agent.fromFunction[AnalysisResult, FinalResponse]("simple-generator")(_ =>
@@ -90,9 +90,9 @@ object OrchestrationSamples {
 
       // Build the DAG plan
       val retrieverNode = Node("retriever", retrieverWithRetry)
-      val analyzerNode = Node("analyzer", analyzerWithTimeout)
+      val analyzerNode  = Node("analyzer", analyzerWithTimeout)
       val generatorNode = Node("generator", generatorWithFallback)
-      
+
       val plan = Plan.builder
         .addNode(retrieverNode)
         .addNode(analyzerNode)
