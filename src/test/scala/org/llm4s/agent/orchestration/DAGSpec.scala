@@ -90,7 +90,7 @@ class DAGSpec extends AnyFlatSpec with Matchers {
       .build
     
     plan.validate.isLeft shouldBe true
-    plan.validate.left.get should include("cycle")
+    plan.validate.swap.getOrElse(throw new RuntimeException("Expected Left")) should include("cycle")
   }
 
   "Plan.topologicalOrder" should "return correct execution order" in {

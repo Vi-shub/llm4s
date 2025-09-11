@@ -1,15 +1,17 @@
+
 package org.llm4s.agent.orchestration
 
-import cats.effect.IO
-import org.llm4s.types.Result
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import org.scalatest.concurrent.ScalaFutures
 import scala.concurrent.duration._
+import scala.concurrent.{ Future, ExecutionContext }
 
 /**
  * Integration tests for complete multi-agent workflows
  */
-class IntegrationSpec extends AnyFlatSpec with Matchers {
+class IntegrationSpec extends AnyFlatSpec with Matchers with ScalaFutures {
+  implicit val ec: ExecutionContext = ExecutionContext.global
 
   // Domain models for a document processing workflow
   case class Document(content: String, metadata: Map[String, String] = Map.empty)
@@ -68,19 +70,19 @@ class IntegrationSpec extends AnyFlatSpec with Matchers {
     val runner = PlanRunner()
     val initialInputs = Map("preprocess" -> Document("This is a great document about machine learning"))
 
-    val result = runner.execute(plan, initialInputs).unsafeRunSync()
+    whenReady(runner.execute(plan, initialInputs)) { result =>
+      // Verify results
+      result.isRight shouldBe true
+      val outputs = result.getOrElse(Map.empty)
 
-    // Verify results
-    result.isRight shouldBe true
-    val outputs = result.getOrElse(Map.empty)
+      outputs should contain key "preprocess"
+      outputs should contain key "analyze"
+      outputs should contain key "summarize"
+      outputs should contain key "aggregate"
 
-    outputs should contain key "preprocess"
-    outputs should contain key "analyze"
-    outputs should contain key "summarize"
-    outputs should contain key "aggregate"
-
-    val finalResult = outputs("aggregate").asInstanceOf[WorkflowResult]
-    finalResult.summary should include("positive sentiment")
+      val finalResult = outputs("aggregate").asInstanceOf[WorkflowResult]
+      finalResult.summary should include("positive sentiment")
+    }
   }
 
   "Error recovery in complex workflow" should "handle partial failures gracefully" in {
@@ -119,16 +121,19 @@ class IntegrationSpec extends AnyFlatSpec with Matchers {
       "failing-branch" -> Document("Another document")
     )
 
-    val result = runner.execute(plan, initialInputs).unsafeRunSync()
-
-    // The workflow should fail because the failing branch will cause the execution to fail
-    result.isLeft shouldBe true
+    whenReady(runner.execute(plan, initialInputs)) { result =>
+      // The workflow should fail because the failing branch will cause the execution to fail
+      result.isLeft shouldBe true
+    }
   }
 
   "Performance test with parallel execution" should "demonstrate concurrency benefits" in {
     // Create multiple independent processing tasks
-    val heavyProcessor = Agent.fromIO[Int, String]("heavy-processor") { input =>
-      IO.sleep(50.millis) *> IO.pure(Right(s"processed-$input"))
+    val heavyProcessor = Agent.fromFuture[Int, String]("heavy-processor") { input =>
+      Future {
+        Thread.sleep(50)
+        Right(s"processed-$input")
+      }
     }
 
     // Create 4 parallel processing nodes
@@ -153,18 +158,19 @@ class IntegrationSpec extends AnyFlatSpec with Matchers {
     val runner = PlanRunner()
 
     val startTime = System.currentTimeMillis()
-    val result = runner.execute(plan, initialInputs).unsafeRunSync()
-    val endTime = System.currentTimeMillis()
+    whenReady(runner.execute(plan, initialInputs)) { result =>
+      val endTime = System.currentTimeMillis()
 
-    val executionTime = endTime - startTime
+      val executionTime = endTime - startTime
 
-    result.isRight shouldBe true
-    val outputs = result.getOrElse(Map.empty)
-    outputs should have size 4
+      result.isRight shouldBe true
+      val outputs = result.getOrElse(Map.empty)
+      outputs should have size 4
 
-    // Should complete in roughly 50ms (parallel) rather than 200ms (sequential)
-    // Adding some tolerance for test environment variations
-    executionTime should be < 150L
+      // Should complete in roughly 50ms (parallel) rather than 200ms (sequential)
+      // Adding some tolerance for test environment variations
+      executionTime should be < 150L
+    }
   }
 
   "Complex DAG with multiple merge points" should "execute correctly" in {
@@ -196,24 +202,24 @@ class IntegrationSpec extends AnyFlatSpec with Matchers {
     val runner = PlanRunner()
     val initialInputs = Map("source" -> "test-data")
 
-    val result = runner.execute(plan, initialInputs).unsafeRunSync()
+    whenReady(runner.execute(plan, initialInputs)) { result =>
+      result.isRight shouldBe true
+      val outputs = result.getOrElse(Map.empty)
 
-    result.isRight shouldBe true
-    val outputs = result.getOrElse(Map.empty)
-
-    outputs should have size 5
-    outputs("finalizer").asInstanceOf[String] should include("final:merged:B:source:test-data")
+      outputs should have size 5
+      outputs("finalizer").asInstanceOf[String] should include("final:merged:B:source:test-data")
+    }
   }
 
   "Workflow with policies and error handling" should "demonstrate production-ready resilience" in {
     // Create a realistic workflow with various failure modes
     var networkCallCount = 0
-    val unreliableNetworkAgent = Agent.fromIO[String, String]("network-call") { data =>
+    val unreliableNetworkAgent = Agent.fromFuture[String, String]("network-call") { data =>
       networkCallCount += 1
       if (networkCallCount < 3) {
-        IO.raiseError(new RuntimeException("Network timeout"))
+        Future.failed(new RuntimeException("Network timeout"))
       } else {
-        IO.pure(Right(s"network-result:$data"))
+        Future.successful(Right(s"network-result:$data"))
       }
     }
 
@@ -244,13 +250,14 @@ class IntegrationSpec extends AnyFlatSpec with Matchers {
     val initialInputs = Map("network" -> "request-data")
 
     networkCallCount = 0 // Reset counter
-    val result = runner.execute(plan, initialInputs).unsafeRunSync()
+    whenReady(runner.execute(plan, initialInputs), timeout(5.seconds)) { result =>
 
-    result.isRight shouldBe true
-    val outputs = result.getOrElse(Map.empty)
+      result.isRight shouldBe true
+      val outputs = result.getOrElse(Map.empty)
 
-    // Should succeed after retries
-    outputs("processor").asInstanceOf[String] should include("processed:network-result:request-data")
-    networkCallCount shouldBe 3 // Should have retried 3 times
+      // Should succeed after retries
+      outputs("processor").asInstanceOf[String] should include("processed:network-result:request-data")
+      networkCallCount shouldBe 3 // Should have retried 3 times
+    }
   }
 }

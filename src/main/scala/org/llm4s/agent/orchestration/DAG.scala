@@ -64,45 +64,51 @@ case class Plan(
    */
   def topologicalOrder: Either[String, List[Node[_, _]]] = {
     validate.flatMap { _ =>
-      val inDegree = scala.collection.mutable.Map[String, Int]()
-      val adjList = scala.collection.mutable.Map[String, List[String]]()
+      // Build adjacency list and in-degree count using immutable collections
+      val initialInDegree = nodes.keys.map(_ -> 0).toMap
+      val initialAdjList = nodes.keys.map(_ -> List.empty[String]).toMap
       
-      // Initialize
-      nodes.keys.foreach { nodeId =>
-        inDegree(nodeId) = 0
-        adjList(nodeId) = List.empty
+      val (inDegree, adjList) = edges.foldLeft((initialInDegree, initialAdjList)) { 
+        case ((inDeg, adj), edge) =>
+          val newInDeg = inDeg.updated(edge.target.id, inDeg(edge.target.id) + 1)
+          val newAdj = adj.updated(edge.source.id, edge.target.id :: adj(edge.source.id))
+          (newInDeg, newAdj)
       }
       
-      // Build adjacency list and in-degree count
-      edges.foreach { edge =>
-        adjList(edge.source.id) = edge.target.id :: adjList(edge.source.id)
-        inDegree(edge.target.id) = inDegree(edge.target.id) + 1
-      }
-      
-      // Kahn's algorithm
-      val queue = scala.collection.mutable.Queue[String]()
-      val result = scala.collection.mutable.ListBuffer[Node[_, _]]()
-      
-      // Add nodes with no incoming edges
-      inDegree.filter(_._2 == 0).keys.foreach(queue.enqueue(_))
-      
-      while (queue.nonEmpty) {
-        val nodeId = queue.dequeue()
-        result += nodes(nodeId)
-        
-        // Remove edges and update in-degrees
-        adjList(nodeId).foreach { neighbor =>
-          inDegree(neighbor) = inDegree(neighbor) - 1
-          if (inDegree(neighbor) == 0) {
-            queue.enqueue(neighbor)
+      // Kahn's algorithm using immutable collections
+      def kahnAlgorithm(
+        currentInDegree: Map[String, Int],
+        currentAdjList: Map[String, List[String]],
+        queue: List[String],
+        result: List[Node[_, _]]
+      ): List[Node[_, _]] = {
+        if (queue.isEmpty) {
+          result
+        } else {
+          val nodeId = queue.head
+          val remainingQueue = queue.tail
+          val newResult = result :+ nodes(nodeId)
+          
+          // Update in-degrees and add new nodes to queue
+          val (updatedInDegree, newQueue) = currentAdjList(nodeId).foldLeft((currentInDegree, remainingQueue)) {
+            case ((inDeg, q), neighbor) =>
+              val newInDeg = inDeg.updated(neighbor, inDeg(neighbor) - 1)
+              val newQ = if (newInDeg(neighbor) == 0) q :+ neighbor else q
+              (newInDeg, newQ)
           }
+          
+          kahnAlgorithm(updatedInDegree, currentAdjList, newQueue, newResult)
         }
       }
+      
+      // Start with nodes that have no incoming edges
+      val initialQueue = inDegree.filter(_._2 == 0).keys.toList
+      val result = kahnAlgorithm(inDegree, adjList, initialQueue, List.empty)
       
       if (result.size != nodes.size) {
         Left("Topological sort failed - graph contains cycles")
       } else {
-        Right(result.toList)
+        Right(result)
       }
     }
   }
@@ -116,38 +122,48 @@ case class Plan(
     val incomingEdges = edges.groupBy(_.target.id).withDefaultValue(List.empty)
     val outgoingEdges = edges.groupBy(_.source.id).withDefaultValue(List.empty)
     
-    // Calculate dependency levels using BFS
-    val levels = scala.collection.mutable.Map[String, Int]()
-    val queue = scala.collection.mutable.Queue[String]()
-    
-    // Start with nodes that have no dependencies (level 0)
-    val entryNodes = nodes.keys.filter(nodeId => incomingEdges(nodeId).isEmpty)
-    entryNodes.foreach { nodeId =>
-      levels(nodeId) = 0
-      queue.enqueue(nodeId)
-    }
-    
-    // Process nodes level by level
-    while (queue.nonEmpty) {
-      val currentNodeId = queue.dequeue()
-      
-      // Update levels of dependent nodes
-      outgoingEdges(currentNodeId).foreach { edge =>
-        val targetId = edge.target.id
-        val targetDependencies = incomingEdges(targetId).map(_.source.id)
+    // Calculate dependency levels using BFS with immutable collections
+    def calculateLevels(
+      currentLevels: Map[String, Int],
+      currentQueue: List[String]
+    ): Map[String, Int] = {
+      if (currentQueue.isEmpty) {
+        currentLevels
+      } else {
+        val currentNodeId = currentQueue.head
+        val remainingQueue = currentQueue.tail
         
-        // Check if all dependencies of target node have been processed
-        if (targetDependencies.forall(levels.contains)) {
-          val maxDependencyLevel = targetDependencies.map(levels).max
-          val targetLevel = maxDependencyLevel + 1
-          
-          if (!levels.contains(targetId)) {
-            levels(targetId) = targetLevel
-            queue.enqueue(targetId)
-          }
+        // Update levels of dependent nodes
+        val (updatedLevels, newQueue) = outgoingEdges(currentNodeId).foldLeft((currentLevels, remainingQueue)) {
+          case ((levels, queue), edge) =>
+            val targetId = edge.target.id
+            val targetDependencies = incomingEdges(targetId).map(_.source.id)
+            
+            // Check if all dependencies of target node have been processed
+            if (targetDependencies.forall(levels.contains)) {
+              val maxDependencyLevel = targetDependencies.map(levels).max
+              val targetLevel = maxDependencyLevel + 1
+              
+              if (!levels.contains(targetId)) {
+                val newLevels = levels + (targetId -> targetLevel)
+                val newQueue = if (!queue.contains(targetId)) queue :+ targetId else queue
+                (newLevels, newQueue)
+              } else {
+                (levels, queue)
+              }
+            } else {
+              (levels, queue)
+            }
         }
+        
+        calculateLevels(updatedLevels, newQueue)
       }
     }
+    
+    // Start with nodes that have no dependencies (level 0)
+    val entryNodes = nodes.keys.filter(nodeId => incomingEdges(nodeId).isEmpty).toList
+    val initialLevels = entryNodes.map(_ -> 0).toMap
+    val levels = calculateLevels(initialLevels, entryNodes)
     
     // Verify all nodes have been assigned levels
     if (levels.size != nodes.size) {

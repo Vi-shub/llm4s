@@ -3,6 +3,7 @@
 import org.llm4s.agent.orchestration._
 import scala.concurrent.{ Future, ExecutionContext, Await }
 import scala.concurrent.duration._
+import scala.util.{ Try, Success, Failure }
 
 /**
  * LLM4S Multi-Agent Orchestration Samples
@@ -70,7 +71,7 @@ object OrchestrationSamples {
 
     implicit val ec: ExecutionContext = ExecutionContext.global
 
-    try {
+    Try {
       println("📋 Creating execution plan...")
       
       // Create agents
@@ -152,11 +153,11 @@ object OrchestrationSamples {
           println(s"❌ Execution failed: $error")
       }
       
-      println("\n" + "=" * 60)
-      println("🎉 Basic DAG Demo completed!")
-      
-    } catch {
-      case ex: Exception =>
+    } match {
+      case Success(_) =>
+        println("\n" + "=" * 60)
+        println("🎉 Basic DAG Demo completed!")
+      case Failure(ex) =>
         println(s"❌ Demo failed with exception: ${ex.getMessage}")
         ex.printStackTrace()
     }
@@ -165,14 +166,14 @@ object OrchestrationSamples {
   def demoSimpleRAG(): Unit = {
     println("🔍 Simple RAG Pipeline Demo")
     println("=" * 40)
-    
+
     case class Query(text: String)
     case class Documents(items: List[String])
     case class GeneratedResponse(text: String, sources: List[String])
 
     implicit val ec: ExecutionContext = ExecutionContext.global
-    
-    try {
+
+    Try {
       // Define RAG agents
       val retriever = Agent.fromFunction[Query, Documents]("rag-retriever") { query =>
         Right(Documents(List(s"Doc1 about ${query.text}", s"Doc2 about ${query.text}")))
@@ -209,25 +210,26 @@ object OrchestrationSamples {
           println(s"❌ RAG Pipeline failed: $error")
       }
       
-    } catch {
-      case ex: Exception =>
+    } match {
+      case Success(_) =>
+        println("=" * 40)
+      case Failure(ex) =>
         println(s"❌ RAG Demo failed: ${ex.getMessage}")
         ex.printStackTrace()
+        println("=" * 40)
     }
-    
-    println("=" * 40)
   }
 
   def demoPolicyIntegration(): Unit = {
     println("🛡️ Policy Integration Demo")
     println("=" * 40)
-    
+
     implicit val ec: ExecutionContext = ExecutionContext.global
-    
+
     case class TestInput(value: String)
     case class TestOutput(result: String)
-    
-    try {
+
+    Try {
       // Create a flaky agent that fails sometimes
       val flakyAgent = Agent.fromFunction[TestInput, TestOutput]("flaky-agent") { input =>
         if (scala.util.Random.nextDouble() < 0.7) { // 70% chance of failure
@@ -268,13 +270,14 @@ object OrchestrationSamples {
         case Left(error) => println(s"   ❌ Fallback failed: $error")
       }
       
-    } catch {
-      case ex: Exception =>
+    } match {
+      case Success(_) =>
+        println("=" * 40)
+      case Failure(ex) =>
         println(s"❌ Policy demo failed: ${ex.getMessage}")
         ex.printStackTrace()
+        println("=" * 40)
     }
-    
-    println("=" * 40)
   }
 
   def main(args: Array[String]): Unit = {

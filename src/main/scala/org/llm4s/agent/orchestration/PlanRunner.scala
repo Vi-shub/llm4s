@@ -182,22 +182,17 @@ class PlanRunner {
         
         // Execute the agent (unsafe cast - in production we'd use more sophisticated typing)
         val agent = node.agent.asInstanceOf[Agent[Any, Any]]
-        agent.execute(input).map {
-          case Right(output) =>
-            logger.debug("Node execution completed successfully")
-            Right(output)
-          case Left(error) =>
-            logger.error("Node execution failed: {}", error.toString)
-            Left(error)
-        }.recover { error =>
-          logger.error("Node execution failed with unexpected error", error)
-          Left(OrchestrationError.NodeExecutionError(
-            node.id,
-            node.agent.name,
-            s"Unexpected execution error: ${error.getMessage}",
-            error
-          ))
-        }
+        for {
+          result <- agent.execute(input).recover { error =>
+            logger.error("Node execution failed with unexpected error", error)
+            Left(OrchestrationError.NodeExecutionError(
+              node.id,
+              node.agent.name,
+              s"Unexpected execution error: ${error.getMessage}",
+              error
+            ))
+          }
+        } yield result
         
       case None =>
         logger.error("No input available for node")
