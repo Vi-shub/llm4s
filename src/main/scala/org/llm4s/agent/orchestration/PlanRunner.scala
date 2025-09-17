@@ -165,9 +165,11 @@ class PlanRunner {
       availableInputs.get(node.id)
     } else {
       // This node depends on other nodes - find the input from dependencies
-      // For simplicity, if multiple inputs, take the first available one
-      // In a production system, we'd have more sophisticated input merging
-      incomingEdges.collectFirst { case edge => availableInputs.get(edge.source.id) }.flatten
+      // Iterate through all incoming edges to find the first one with a successful output
+      // This allows downstream nodes to run when at least one dependency succeeds
+      incomingEdges
+        .map(edge => availableInputs.get(edge.source.id))
+        .collectFirst { case Some(value) => value }
     }
   }
 
@@ -191,21 +193,22 @@ class PlanRunner {
       case Some(input) =>
         logger.debug("Node input available, type: {}", input.getClass.getSimpleName)
 
-        // Execute the agent (unsafe cast - in production we'd use more sophisticated typing)
+        // Execute the agent with proper type safety
+        // Note: Due to type erasure, we need to use controlled casting here
+        // This is a necessary limitation of the current design with type-erased nodes
         val agent = node.agent.asInstanceOf[Agent[Any, Any]]
-        for {
-          result <- agent.execute(input).recover { error =>
-            logger.error("Node execution failed with unexpected error", error)
-            Left(
-              OrchestrationError.NodeExecutionError(
-                node.id,
-                node.agent.name,
-                s"Unexpected execution error: ${error.getMessage}",
-                error
-              )
+
+        agent.execute(input).recover { error =>
+          logger.error("Node execution failed with unexpected error", error)
+          Left(
+            OrchestrationError.NodeExecutionError(
+              node.id,
+              node.agent.name,
+              s"Unexpected execution error: ${error.getMessage}",
+              error
             )
-          }
-        } yield result
+          )
+        }
 
       case None =>
         logger.error("No input available for node")

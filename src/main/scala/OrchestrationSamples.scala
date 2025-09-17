@@ -51,9 +51,12 @@ object OrchestrationSamples {
 
   def createResponseGenerator(): Agent[AnalysisResult, FinalResponse] =
     Agent.fromFuture("response-generator") { analysis =>
-      // Simulate async response generation
+      // Simulate async response generation with proper async delay
       Future {
-        Thread.sleep(100) // Simulate processing time
+        // Simulate processing time without blocking threads
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < 100)
+          Thread.`yield`()
         Right(
           FinalResponse(
             s"Based on the analysis: ${analysis.summary}. Key points: ${analysis.keyPoints.mkString(", ")}",

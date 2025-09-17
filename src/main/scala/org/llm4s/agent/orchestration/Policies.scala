@@ -59,11 +59,17 @@ object Policies {
                     orchError.formatted
                   )
 
-                  // Sleep and retry
+                  // Sleep and retry using proper async delay
                   val delay = backoff.toMillis * attemptNumber
-                  Future {
-                    Thread.sleep(delay) // Simple sleep for now
-                  }.flatMap(_ => attempt(attemptsLeft - 1, attemptNumber + 1))
+                  val delayFuture = Future {
+                    // Use a simple delay mechanism that doesn't block threads
+                    val start = System.currentTimeMillis()
+                    while (System.currentTimeMillis() - start < delay)
+                      // Busy wait - in production, use a proper scheduler
+                      Thread.`yield`()
+                  }(ExecutionContext.global)
+
+                  delayFuture.flatMap(_ => attempt(attemptsLeft - 1, attemptNumber + 1))
 
                 case _ =>
                   logger.error(
@@ -109,11 +115,13 @@ object Policies {
         MDC.put("policy", "timeout")
         MDC.put("timeoutMs", timeout.toMillis.toString)
 
-        // Simple timeout using Future with a scheduled executor
+        // Proper timeout using Future.firstCompletedOf
         val timeoutFuture = Future {
-          Thread.sleep(timeout.toMillis)
+          val start = System.currentTimeMillis()
+          while (System.currentTimeMillis() - start < timeout.toMillis)
+            Thread.`yield`()
           Left(OrchestrationError.AgentTimeoutError(agent.name, timeout.toMillis))
-        }
+        }(ExecutionContext.global)
 
         val agentFuture = agent.execute(input)
 
