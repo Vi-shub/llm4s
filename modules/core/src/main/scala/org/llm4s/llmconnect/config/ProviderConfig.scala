@@ -291,3 +291,61 @@ object ZaiConfig {
     )
   }
 }
+
+case class GeminiConfig(
+  apiKey: String,
+  model: String,
+  baseUrl: String,
+  contextWindow: Int,
+  reserveCompletion: Int
+) extends ProviderConfig
+
+object GeminiConfig {
+  private val logger = LoggerFactory.getLogger(getClass)
+
+  private def getContextWindowForModel(modelName: String): (Int, Int) = {
+    val standardReserve = 8192 // 8K tokens reserved for completion (Gemini supports large outputs)
+
+    val registryResult =
+      ModelRegistry
+        .lookup("gemini", modelName)
+        .toOption
+        .orElse(ModelRegistry.lookup("google", modelName).toOption)
+        .orElse(ModelRegistry.lookup(modelName).toOption)
+
+    registryResult match {
+      case Some(metadata) =>
+        val contextWindow = metadata.maxInputTokens.getOrElse(1048576) // Default 1M for Gemini
+        val reserve       = metadata.maxOutputTokens.getOrElse(standardReserve)
+        logger.debug(s"Using ModelRegistry metadata for $modelName: context=$contextWindow, reserve=$reserve")
+        (contextWindow, reserve)
+      case None =>
+        logger.debug(s"Model $modelName not found in registry, using fallback values")
+        modelName match {
+          case name if name.contains("gemini-2")     => (1048576, standardReserve) // 1M tokens
+          case name if name.contains("gemini-1.5")   => (1048576, standardReserve) // 1M tokens
+          case name if name.contains("gemini-1.0")   => (32768, standardReserve)   // 32K tokens
+          case name if name.contains("gemini-pro")   => (1048576, standardReserve) // 1M tokens
+          case name if name.contains("gemini-flash") => (1048576, standardReserve) // 1M tokens
+          case _                                     => (1048576, standardReserve) // Default to 1M
+        }
+    }
+  }
+
+  def fromValues(
+    modelName: String,
+    apiKey: String,
+    baseUrl: String
+  ): GeminiConfig = {
+    require(apiKey.trim.nonEmpty, "Gemini apiKey must be non-empty")
+    require(baseUrl.trim.nonEmpty, "Gemini baseUrl must be non-empty")
+    val (cw, rc) = getContextWindowForModel(modelName)
+    GeminiConfig(
+      apiKey = apiKey,
+      model = modelName,
+      baseUrl = baseUrl,
+      contextWindow = cw,
+      reserveCompletion = rc
+    )
+  }
+}

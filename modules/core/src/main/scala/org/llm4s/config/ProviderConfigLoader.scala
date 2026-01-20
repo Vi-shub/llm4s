@@ -35,13 +35,19 @@ private[config] object ProviderConfigLoader {
     apiKey: Option[String]
   )
 
+  final private case class GeminiSection(
+    baseUrl: Option[String],
+    apiKey: Option[String]
+  )
+
   final private case class ProviderRoot(
     llm: LlmSection,
     openai: Option[OpenAISection],
     azure: Option[AzureSection],
     anthropic: Option[AnthropicSection],
     ollama: Option[OllamaSection],
-    zai: Option[ZaiSection]
+    zai: Option[ZaiSection],
+    gemini: Option[GeminiSection]
   )
 
   implicit private val llmSectionReader: PureConfigReader[LlmSection] =
@@ -62,8 +68,11 @@ private[config] object ProviderConfigLoader {
   implicit private val zaiSectionReader: PureConfigReader[ZaiSection] =
     PureConfigReader.forProduct2("baseUrl", "apiKey")(ZaiSection.apply)
 
+  implicit private val geminiSectionReader: PureConfigReader[GeminiSection] =
+    PureConfigReader.forProduct2("baseUrl", "apiKey")(GeminiSection.apply)
+
   implicit private val providerRootReader: PureConfigReader[ProviderRoot] =
-    PureConfigReader.forProduct6("llm", "openai", "azure", "anthropic", "ollama", "zai")(ProviderRoot.apply)
+    PureConfigReader.forProduct7("llm", "openai", "azure", "anthropic", "ollama", "zai", "gemini")(ProviderRoot.apply)
 
   def load(source: ConfigSource): Result[ProviderConfig] = {
     val rootEither = source.at("llm4s").load[ProviderRoot]
@@ -104,12 +113,13 @@ private[config] object ProviderConfigLoader {
         else (inferProviderFromBaseUrl(root), parts(0))
 
       prefix match {
-        case "openai"     => buildOpenAIConfig(modelName, root.openai)
-        case "openrouter" => buildOpenAIConfig(modelName, root.openai)
-        case "azure"      => buildAzureConfig(modelName, root.azure)
-        case "anthropic"  => buildAnthropicConfig(modelName, root.anthropic)
-        case "ollama"     => buildOllamaConfig(modelName, root.ollama)
-        case "zai"        => buildZaiConfig(modelName, root.zai)
+        case "openai"            => buildOpenAIConfig(modelName, root.openai)
+        case "openrouter"        => buildOpenAIConfig(modelName, root.openai)
+        case "azure"             => buildAzureConfig(modelName, root.azure)
+        case "anthropic"         => buildAnthropicConfig(modelName, root.anthropic)
+        case "ollama"            => buildOllamaConfig(modelName, root.ollama)
+        case "zai"               => buildZaiConfig(modelName, root.zai)
+        case "gemini" | "google" => buildGeminiConfig(modelName, root.gemini)
         case other if other.nonEmpty =>
           Left(ConfigurationError(s"Unknown provider prefix: $other in '$modelSpec'"))
         case _ =>
@@ -245,6 +255,30 @@ private[config] object ProviderConfigLoader {
         Left(
           ConfigurationError(
             "Z.ai provider selected but llm4s.zai section is missing"
+          )
+        )
+    }
+
+  private def buildGeminiConfig(modelName: String, section: Option[GeminiSection]): Result[ProviderConfig] =
+    section match {
+      case Some(gemini) =>
+        val apiKeyOpt = gemini.apiKey.map(_.trim).filter(_.nonEmpty)
+        val apiKeyResult: Result[String] =
+          apiKeyOpt.toRight(
+            ConfigurationError("Missing Gemini API key (llm4s.gemini.apiKey / GOOGLE_API_KEY)")
+          )
+
+        apiKeyResult.map { apiKey =>
+          val baseUrl =
+            gemini.baseUrl.map(_.trim).filter(_.nonEmpty).getOrElse(DefaultConfig.DEFAULT_GEMINI_BASE_URL)
+
+          GeminiConfig.fromValues(modelName, apiKey, baseUrl)
+        }
+
+      case None =>
+        Left(
+          ConfigurationError(
+            "Gemini provider selected but llm4s.gemini section is missing"
           )
         )
     }

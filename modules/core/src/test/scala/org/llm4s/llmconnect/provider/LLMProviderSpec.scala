@@ -11,15 +11,20 @@ class LLMProviderSpec extends AnyFlatSpec with Matchers {
   // ============ Provider Instances ============
 
   "LLMProvider" should "have all expected provider instances" in {
-    LLMProvider.all should have size 6
+    LLMProvider.all should have size 7
     (LLMProvider.all should contain).allOf(
       LLMProvider.OpenAI,
       LLMProvider.Azure,
       LLMProvider.Anthropic,
       LLMProvider.OpenRouter,
       LLMProvider.Ollama,
-      LLMProvider.Zai
+      LLMProvider.Zai,
+      LLMProvider.Gemini
     )
+  }
+
+  it should "have exactly 7 providers" in {
+    LLMProvider.all should have size 7
   }
 
   // ============ Provider Names ============
@@ -48,6 +53,10 @@ class LLMProviderSpec extends AnyFlatSpec with Matchers {
     LLMProvider.Zai.name shouldBe "zai"
   }
 
+  it should "return correct name for Gemini" in {
+    LLMProvider.Gemini.name shouldBe "gemini"
+  }
+
   // ============ fromName Parsing ============
 
   "LLMProvider.fromName" should "parse 'openai' correctly" in {
@@ -74,6 +83,14 @@ class LLMProviderSpec extends AnyFlatSpec with Matchers {
     LLMProvider.fromName("zai") shouldBe Some(LLMProvider.Zai)
   }
 
+  it should "parse 'gemini' correctly" in {
+    LLMProvider.fromName("gemini") shouldBe Some(LLMProvider.Gemini)
+  }
+
+  it should "parse 'google' as Gemini" in {
+    LLMProvider.fromName("google") shouldBe Some(LLMProvider.Gemini)
+  }
+
   it should "be case insensitive" in {
     LLMProvider.fromName("OpenAI") shouldBe Some(LLMProvider.OpenAI)
     LLMProvider.fromName("AZURE") shouldBe Some(LLMProvider.Azure)
@@ -81,6 +98,8 @@ class LLMProviderSpec extends AnyFlatSpec with Matchers {
     LLMProvider.fromName("OpenRouter") shouldBe Some(LLMProvider.OpenRouter)
     LLMProvider.fromName("OLLAMA") shouldBe Some(LLMProvider.Ollama)
     LLMProvider.fromName("ZAI") shouldBe Some(LLMProvider.Zai)
+    LLMProvider.fromName("GEMINI") shouldBe Some(LLMProvider.Gemini)
+    LLMProvider.fromName("Google") shouldBe Some(LLMProvider.Gemini)
   }
 
   it should "return None for unknown providers" in {
@@ -116,10 +135,12 @@ class LLMProviderSpec extends AnyFlatSpec with Matchers {
       case LLMProvider.OpenRouter => "cloud-openrouter"
       case LLMProvider.Ollama     => "local"
       case LLMProvider.Zai        => "cloud-zai"
+      case LLMProvider.Gemini     => "cloud-gemini"
     }
 
     describe(LLMProvider.OpenAI) shouldBe "cloud-openai"
     describe(LLMProvider.Ollama) shouldBe "local"
     describe(LLMProvider.Zai) shouldBe "cloud-zai"
+    describe(LLMProvider.Gemini) shouldBe "cloud-gemini"
   }
 }
