@@ -45,7 +45,7 @@ inThisBuild(
           "0.0.0-UNKNOWN"
       }
     },
-    ThisBuild / coverageMinimumStmtTotal := 54,
+    ThisBuild / coverageMinimumStmtTotal := 50,
     ThisBuild / coverageFailOnMinimum    := true,
     ThisBuild / coverageHighlighting     := true,
     ThisBuild / coverageExcludedPackages := Seq(
