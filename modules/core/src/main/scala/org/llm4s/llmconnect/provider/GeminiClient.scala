@@ -1,6 +1,6 @@
 package org.llm4s.llmconnect.provider
 
-import org.llm4s.error.{ AuthenticationError, RateLimitError, ValidationError }
+import org.llm4s.error.{ AuthenticationError, RateLimitError, ServiceError, ValidationError }
 import org.llm4s.error.ThrowableOps._
 import org.llm4s.llmconnect.LLMClient
 import org.llm4s.llmconnect.config.GeminiConfig
@@ -11,6 +11,11 @@ import org.llm4s.toolapi.ToolFunction
 import org.llm4s.types.Result
 import org.slf4j.LoggerFactory
 
+import java.io.{ BufferedReader, InputStreamReader }
+import java.net.URI
+import java.net.http.{ HttpClient, HttpRequest, HttpResponse }
+import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.util.UUID
 import scala.util.Try
 
@@ -44,7 +49,8 @@ import scala.util.Try
  * @see [[org.llm4s.llmconnect.config.GeminiConfig]] for configuration options
  */
 class GeminiClient(config: GeminiConfig) extends LLMClient {
-  private val logger = LoggerFactory.getLogger(getClass)
+  private val logger     = LoggerFactory.getLogger(getClass)
+  private val httpClient = HttpClient.newHttpClient()
 
   override def complete(
     conversation: Conversation,
@@ -56,22 +62,24 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
         val requestBody             = buildRequestBody(transformedConversation, transformed.options)
         val url                     = s"${config.baseUrl}/models/${config.model}:generateContent?key=${config.apiKey}"
 
-        logger.debug(s"[Gemini] Sending request to $url")
+        logger.debug(s"[Gemini] Sending request to ${config.baseUrl}/models/${config.model}:generateContent")
         logger.debug(s"[Gemini] Request body: ${requestBody.render()}")
 
-        val attempt = Try {
-          val response = requests.post(
-            url,
-            data = requestBody.render(),
-            headers = Map("Content-Type" -> "application/json"),
-            readTimeout = 120000,
-            connectTimeout = 30000
-          )
+        val request = HttpRequest
+          .newBuilder()
+          .uri(URI.create(url))
+          .header("Content-Type", "application/json")
+          .timeout(Duration.ofMinutes(2))
+          .POST(HttpRequest.BodyPublishers.ofString(requestBody.render()))
+          .build()
 
-          if (response.statusCode >= 200 && response.statusCode < 300) {
-            parseCompletionResponse(response.text())
+        val attempt = Try {
+          val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+
+          if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            parseCompletionResponse(response.body())
           } else {
-            handleErrorResponse(response.statusCode, response.text())
+            handleErrorResponse(response.statusCode(), response.body())
           }
         }.toEither.left
           .map(e => e.toLLMError)
@@ -91,27 +99,35 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
         val requestBody             = buildRequestBody(transformedConversation, transformed.options)
         val url = s"${config.baseUrl}/models/${config.model}:streamGenerateContent?key=${config.apiKey}&alt=sse"
 
-        logger.debug(s"[Gemini] Starting stream to $url")
+        logger.debug(s"[Gemini] Starting stream to ${config.baseUrl}/models/${config.model}:streamGenerateContent")
 
-        val accumulator = StreamingAccumulator.create()
-        val messageId   = UUID.randomUUID().toString
+        val request = HttpRequest
+          .newBuilder()
+          .uri(URI.create(url))
+          .header("Content-Type", "application/json")
+          .timeout(Duration.ofMinutes(10))
+          .POST(HttpRequest.BodyPublishers.ofString(requestBody.render()))
+          .build()
 
-        val attempt = Try {
-          val response = requests.post(
-            url,
-            data = requestBody.render(),
-            headers = Map("Content-Type" -> "application/json"),
-            readTimeout = 120000,
-            connectTimeout = 30000
-          )
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
 
-          if (response.statusCode >= 200 && response.statusCode < 300) {
-            // Parse SSE stream
-            val lines = response.text().split("\n")
-            lines.foreach { line =>
-              if (line.startsWith("data: ")) {
-                val jsonStr = line.stripPrefix("data: ").trim
-                if (jsonStr.nonEmpty && jsonStr != "[DONE]") {
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+          val err = new String(response.body().readAllBytes(), StandardCharsets.UTF_8)
+          response.body().close()
+          handleErrorResponse(response.statusCode(), err)
+        } else {
+          val accumulator = StreamingAccumulator.create()
+          val messageId   = UUID.randomUUID().toString
+          val reader      = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))
+
+          val processEither = Try {
+            var line: String = null
+            while ({ line = reader.readLine(); line != null }) {
+              val trimmed = line.trim
+              // SSE format: lines starting with "data: " contain JSON
+              if (trimmed.startsWith("data: ")) {
+                val jsonStr = trimmed.stripPrefix("data: ").trim
+                if (jsonStr.nonEmpty) {
                   Try(ujson.read(jsonStr)).foreach { json =>
                     parseStreamChunk(json, messageId).foreach { chunk =>
                       accumulator.addChunk(chunk)
@@ -121,15 +137,16 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
                 }
               }
             }
-            Right(())
-          } else {
-            handleErrorResponse(response.statusCode, response.text())
-          }
-        }.toEither.left
-          .map(e => e.toLLMError)
-          .flatten
+          }.toEither
 
-        attempt.flatMap(_ => accumulator.toCompletion.map(c => c.copy(model = config.model)))
+          // Close resources
+          Try(reader.close())
+          Try(response.body().close())
+
+          processEither.left
+            .map(_.toLLMError)
+            .flatMap(_ => accumulator.toCompletion.map(c => c.copy(model = config.model)))
+        }
     }
 
   override def getContextWindow(): Int = config.contextWindow
@@ -149,6 +166,9 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
     val contents    = scala.collection.mutable.ArrayBuffer[ujson.Value]()
     var systemInstr = Option.empty[String]
 
+    // Track tool call IDs to function names for proper tool message handling
+    val toolCallIdToName = scala.collection.mutable.Map[String, String]()
+
     // Process messages - Gemini uses "user" and "model" roles
     conversation.messages.foreach {
       case SystemMessage(content) =>
@@ -167,6 +187,8 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
           val parts = scala.collection.mutable.ArrayBuffer[ujson.Value]()
           contentOpt.foreach(c => parts += ujson.Obj("text" -> c))
           toolCalls.foreach { tc =>
+            // Track the mapping from tool call ID to function name
+            toolCallIdToName(tc.id) = tc.name
             parts += ujson.Obj(
               "functionCall" -> ujson.Obj(
                 "name" -> tc.name,
@@ -186,12 +208,15 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
 
       case ToolMessage(content, toolCallId) =>
         // Gemini uses functionResponse for tool results
+        // The name field should be the function name, not the tool call ID
+        // Look up the function name from our mapping, fallback to toolCallId if not found
+        val functionName = toolCallIdToName.getOrElse(toolCallId, toolCallId)
         contents += ujson.Obj(
           "role" -> "user",
           "parts" -> ujson.Arr(
             ujson.Obj(
               "functionResponse" -> ujson.Obj(
-                "name"     -> toolCallId,
+                "name"     -> functionName,
                 "response" -> ujson.Obj("result" -> content)
               )
             )
@@ -232,9 +257,13 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
 
   /**
    * Convert a tool to Gemini's function declaration format.
+   * Gemini doesn't accept additionalProperties in schemas, so we strip it out.
    */
   private def convertToolToGeminiFormat(tool: ToolFunction[_, _]): ujson.Value = {
     val schema = ujson.read(tool.schema.toJsonSchema(false).render())
+
+    // Recursively remove additionalProperties from all objects in the schema
+    stripAdditionalProperties(schema)
 
     ujson.Obj(
       "name"        -> tool.name,
@@ -242,6 +271,29 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
       "parameters"  -> schema
     )
   }
+
+  /**
+   * Recursively strip additionalProperties from a JSON schema.
+   * Gemini's API doesn't accept this field.
+   */
+  private def stripAdditionalProperties(json: ujson.Value): Unit =
+    json match {
+      case obj: ujson.Obj =>
+        // Remove additionalProperties at this level
+        obj.value.remove("additionalProperties")
+
+        // Recurse into nested objects
+        obj.value.get("properties").foreach(props => props.obj.values.foreach(stripAdditionalProperties))
+
+        // Handle items in arrays
+        obj.value.get("items").foreach(stripAdditionalProperties)
+
+        // Handle anyOf, oneOf, allOf
+        Seq("anyOf", "oneOf", "allOf").foreach { key =>
+          obj.value.get(key).foreach(arr => arr.arr.foreach(stripAdditionalProperties))
+        }
+      case _ => // Not an object, nothing to do
+    }
 
   /**
    * Parse a non-streaming completion response.
@@ -356,7 +408,7 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
    * Handle error responses from Gemini API.
    */
   private def handleErrorResponse(statusCode: Int, body: String): Result[Nothing] = {
-    logger.error(s"[Gemini] Error response: $statusCode - $body")
+    logger.error(s"[Gemini] Error response: $statusCode")
 
     val errorMessage = Try {
       val json = ujson.read(body)
@@ -367,7 +419,7 @@ class GeminiClient(config: GeminiConfig) extends LLMClient {
       case 401 | 403 => Left(AuthenticationError("gemini", errorMessage))
       case 429       => Left(RateLimitError("gemini"))
       case 400       => Left(ValidationError("request", errorMessage))
-      case _         => Left(ValidationError("api", s"Gemini API error ($statusCode): $errorMessage"))
+      case _         => Left(ServiceError(statusCode, "gemini", s"Gemini API error: $errorMessage"))
     }
   }
 }
