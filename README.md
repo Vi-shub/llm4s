@@ -54,7 +54,7 @@ LLM4S provides a simple, robust, and scalable framework for building LLM applica
 
 ## Features
 
-- **Multi-Provider Support**: Connect seamlessly to multiple LLM providers (OpenAI, Anthropic, etc.) with planned expansion.
+- **Multi-Provider Support**: Connect seamlessly to multiple LLM providers (OpenAI, Anthropic, Google Gemini, Azure, Ollama).
 - **Execution Environments**: Run LLM-driven operations in secure, containerized or non-containerized setups.
 - **Error Handling**: Robust mechanisms to catch, log, and recover from failures gracefully.
 - **MCP Support**: Integration with Model Context Protocol for richer context management.

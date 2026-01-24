@@ -53,7 +53,7 @@ Create a `.env` file in your project root:
 # Model Selection
 # ===================
 # Format: <provider>/<model-name>
-# Supported providers: openai, anthropic, azure, ollama
+# Supported providers: openai, anthropic, azure, ollama, gemini
 LLM_MODEL=openai/gpt-4o
 
 # ===================
@@ -83,6 +83,12 @@ AZURE_API_VERSION=2024-02-15-preview  # Optional
 # ===================
 OLLAMA_BASE_URL=http://localhost:11434
 # No API key needed for Ollama
+
+# ===================
+# Google Gemini Configuration
+# ===================
+GOOGLE_API_KEY=your-google-api-key
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta  # Optional
 
 # ===================
 # Tracing Configuration
@@ -323,6 +329,33 @@ ollama pull llama2
 # Start server
 ollama serve
 ```
+
+### Google Gemini
+
+```bash
+# Model selection
+LLM_MODEL=gemini/gemini-2.0-flash
+LLM_MODEL=gemini/gemini-1.5-pro
+LLM_MODEL=gemini/gemini-1.5-flash
+
+# Required
+GOOGLE_API_KEY=your-google-api-key
+
+# Optional
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+```
+
+**Available Models:**
+- `gemini-2.0-flash` - Latest Gemini 2.0 (fast, multimodal)
+- `gemini-2.5-flash` - Gemini 2.5 Flash (thinking model)
+- `gemini-1.5-pro` - High capability (1M token context)
+- `gemini-1.5-flash` - Fast and efficient (1M token context)
+
+**Get API Key:**
+1. Go to [Google AI Studio](https://aistudio.google.com/)
+2. Click "Get API Key"
+3. Create or select a project
+4. Copy the generated API key
 
 ---
 
